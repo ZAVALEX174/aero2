@@ -1417,31 +1417,234 @@ function splitAllLines() {
   // Очищаем предыдущие точки
   clearIntersectionPoints();
 
+  // Находим все линии
+  const allLines = canvas.getObjects().filter(obj =>
+    obj.type === 'line' && obj.id !== 'grid-line'
+  );
+
   // Находим все пересечения
   const intersections = findAllIntersections();
 
-  // Сохраняем информацию о точках
-  intersectionPoints = intersections;
+  // Группируем пересечения по линиям
+  const lineIntersections = new Map();
+  const objectIntersections = new Map();
 
-  // Создаем визуальные точки и разбиваем линии
-  intersections.forEach((inter, index) => {
-    createIntersectionPoint(inter.x, inter.y, index, inter);
-    splitLinesAtPoint(inter);
+  intersections.forEach(inter => {
+    if (inter.object) {
+      // Это пересечение с объектом
+      if (!objectIntersections.has(inter.line1)) {
+        objectIntersections.set(inter.line1, []);
+      }
+      objectIntersections.get(inter.line1).push(inter);
+    } else if (inter.line1 && inter.line2) {
+      // Это пересечение линии с линией
+      if (!lineIntersections.has(inter.line1)) {
+        lineIntersections.set(inter.line1, []);
+      }
+      if (!lineIntersections.has(inter.line2)) {
+        lineIntersections.set(inter.line2, []);
+      }
+
+      lineIntersections.get(inter.line1).push({
+        x: inter.x,
+        y: inter.y,
+        t: inter.ua || 0,
+        isLineIntersection: true
+      });
+
+      lineIntersections.get(inter.line2).push({
+        x: inter.x,
+        y: inter.y,
+        t: inter.ub || 0,
+        isLineIntersection: true
+      });
+    }
+  });
+
+  // Сначала обрабатываем пересечения с объектами
+  let objectSplitCount = 0;
+  objectIntersections.forEach((intersections, line) => {
+    // Группируем пересечения по объектам
+    const intersectionsByObject = new Map();
+
+    intersections.forEach(inter => {
+      if (!intersectionsByObject.has(inter.object)) {
+        intersectionsByObject.set(inter.object, []);
+      }
+      intersectionsByObject.get(inter.object).push(inter);
+    });
+
+    // Для каждого объекта обрабатываем свою линию
+    intersectionsByObject.forEach((objIntersections, object) => {
+      if (objIntersections.length >= 2) {
+        // Сортируем по типу и позиции
+        const entryPoints = objIntersections.filter(i => i.type === 'entry');
+        const exitPoints = objIntersections.filter(i => i.type === 'exit');
+
+        if (entryPoints.length > 0 && exitPoints.length > 0) {
+          // Находим ближайшую точку входа и самую дальнюю точку выхода
+          const entryPoint = entryPoints.reduce((closest, current) => {
+            const closestDist = Math.sqrt(
+              Math.pow(closest.x - line.x1, 2) + Math.pow(closest.y - line.y1, 2)
+            );
+            const currentDist = Math.sqrt(
+              Math.pow(current.x - line.x1, 2) + Math.pow(current.y - line.y1, 2)
+            );
+            return currentDist < closestDist ? current : closest;
+          });
+
+          const exitPoint = exitPoints.reduce((farthest, current) => {
+            const farthestDist = Math.sqrt(
+              Math.pow(farthest.x - line.x1, 2) + Math.pow(farthest.y - line.y1, 2)
+            );
+            const currentDist = Math.sqrt(
+              Math.pow(current.x - line.x1, 2) + Math.pow(current.y - line.y1, 2)
+            );
+            return currentDist > farthestDist ? current : farthest;
+          });
+
+          // Разделяем линию
+          const segments = [
+            { // До объекта
+              start: { x: line.x1, y: line.y1 },
+              end: { x: entryPoint.x, y: entryPoint.y }
+            },
+            { // После объекта
+              start: { x: exitPoint.x, y: exitPoint.y },
+              end: { x: line.x2, y: line.y2 }
+            }
+          ];
+
+          // Удаляем исходную линию
+          saveToUndoStack();
+          canvas.remove(line);
+
+          // Добавляем новые сегменты
+          segments.forEach(segment => {
+            const length = Math.sqrt(
+              Math.pow(segment.end.x - segment.start.x, 2) +
+              Math.pow(segment.end.y - segment.start.y, 2)
+            );
+
+            if (length > 2) {
+              const newLine = new fabric.Line([
+                segment.start.x, segment.start.y,
+                segment.end.x, segment.end.y
+              ], {
+                stroke: line.stroke,
+                strokeWidth: line.strokeWidth,
+                strokeDashArray: line.strokeDashArray,
+                fill: false,
+                strokeLineCap: 'round',
+                hasControls: true,
+                hasBorders: true,
+                lockRotation: false,
+                properties: { ...line.properties }
+              });
+
+              if (newLine.properties) {
+                newLine.properties.length = length;
+              }
+
+              canvas.add(newLine);
+              objectSplitCount++;
+            }
+          });
+        }
+      }
+    });
+  });
+
+  // Затем обрабатываем пересечения линий с линиями
+  let lineSplitCount = 0;
+  const processedLines = new Set();
+
+  lineIntersections.forEach((points, line) => {
+    // Если линия уже была обработана при разделении объектами, пропускаем
+    if (processedLines.has(line)) return;
+
+    // Сортируем точки
+    points.sort((a, b) => a.t - b.t);
+
+    // Удаляем дубликаты
+    const uniquePoints = [];
+    const seen = new Set();
+
+    points.forEach(point => {
+      const key = `${Math.round(point.x)}_${Math.round(point.y)}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        uniquePoints.push(point);
+      }
+    });
+
+    if (uniquePoints.length > 0) {
+      // Разделяем линию
+      const result = splitLineAtMultiplePoints(line, uniquePoints);
+      if (result && result.length > 1) {
+        lineSplitCount += result.length - 1;
+        result.forEach(l => processedLines.add(l));
+      }
+    }
+  });
+
+  // Проверка, пересекает ли линия объект
+  function lineIntersectsObject(line, object) {
+    const rect = getObjectRect(object);
+    const intersections = getLineRectIntersections(line, rect);
+
+    // Фильтруем только валидные пересечения (не слишком близко к концам)
+    const validIntersections = intersections.filter(inter => {
+      const distToStart = Math.sqrt(
+        Math.pow(inter.point.x - line.x1, 2) +
+        Math.pow(inter.point.y - line.y1, 2)
+      );
+      const distToEnd = Math.sqrt(
+        Math.pow(inter.point.x - line.x2, 2) +
+        Math.pow(inter.point.y - line.y2, 2)
+      );
+
+      return distToStart > 5 && distToEnd > 5;
+    });
+
+    return validIntersections.length >= 2;
+  }
+
+  // Создаем визуальные точки для уникальных пересечений
+  const uniqueIntersections = [];
+  const addedPoints = new Set();
+
+  intersections.forEach(inter => {
+    const pointKey = `${Math.round(inter.x * 10)}_${Math.round(inter.y * 10)}`;
+    if (!addedPoints.has(pointKey)) {
+      addedPoints.add(pointKey);
+      uniqueIntersections.push(inter);
+    }
+  });
+
+  // Сохраняем информацию о точках
+  intersectionPoints = uniqueIntersections;
+
+  // Создаем визуальные точки
+  uniqueIntersections.forEach((inter, index) => {
+    if (!inter.object || (inter.object && lineSplitMode === 'AUTO')) {
+      createIntersectionPoint(inter.x, inter.y, index, inter);
+    }
   });
 
   canvas.renderAll();
-
-  // ВАЖНО: гарантируем, что точки будут сверху
   bringIntersectionPointsToFront();
 
-  if (intersections.length > 0) {
-    showNotification(`Создано ${intersections.length} точек разделения`, 'success');
+  const totalSplits = objectSplitCount + lineSplitCount;
+  if (totalSplits > 0) {
+    showNotification(`Выполнено ${totalSplits} разделений (${objectSplitCount} по объектам, ${lineSplitCount} по линиям)`, 'success');
   } else {
     showNotification('Пересечений для разделения не найдено', 'info');
   }
 }
 
 // Функция для поиска пересечений
+// Функция для определения пересечения двух отрезков
 // Функция для определения пересечения двух отрезков
 function lineIntersection(line1, line2) {
   if (line1 === line2) return null;
@@ -1467,8 +1670,11 @@ function lineIntersection(line1, line2) {
     const x = x1 + ua * (x2 - x1);
     const y = y1 + ua * (y2 - y1);
 
-    // НЕ игнорируем пересечения вблизи концов - они ВАЖНЫ!
-    // Убрали проверку на ua < 0.05 || ua > 0.95 и т.д.
+    // Проверяем, не слишком ли близко к концам линий
+    // Используем относительную позицию, чтобы избежать деления на короткие линии
+    if (ua < 0.02 || ua > 0.98 || ub < 0.02 || ub > 0.98) {
+      return null;
+    }
 
     return {
       x: Math.round(x * 100) / 100,
@@ -1484,6 +1690,8 @@ function lineIntersection(line1, line2) {
 }
 
 // Поиск всех пересечений
+// Поиск всех пересечений
+// Поиск всех пересечений (включая линии с объектами)
 function findAllIntersections() {
   const lines = canvas.getObjects().filter(obj =>
     obj.type === 'line' && obj.id !== 'grid-line'
@@ -1507,14 +1715,45 @@ function findAllIntersections() {
     images.forEach(image => {
       const rect = getObjectRect(image);
       const lineIntersections = getLineRectIntersections(line, rect);
-      lineIntersections.forEach(inter => {
-        intersections.push({
-          x: inter.point.x,
-          y: inter.point.y,
-          line1: line,
-          object: image
-        });
+
+      // Фильтруем пересечения, исключая точки слишком близко к концам линии
+      const validIntersections = lineIntersections.filter(inter => {
+        const distToStart = Math.sqrt(
+          Math.pow(inter.point.x - line.x1, 2) +
+          Math.pow(inter.point.y - line.y1, 2)
+        );
+        const distToEnd = Math.sqrt(
+          Math.pow(inter.point.x - line.x2, 2) +
+          Math.pow(inter.point.y - line.y2, 2)
+        );
+
+        return distToStart > 5 && distToEnd > 5;
       });
+
+      if (validIntersections.length >= 2) {
+        // Для объектов добавляем точки входа и выхода
+        validIntersections.sort((a, b) => {
+          const distA = Math.sqrt(Math.pow(a.point.x - line.x1, 2) + Math.pow(a.point.y - line.y1, 2));
+          const distB = Math.sqrt(Math.pow(b.point.x - line.x1, 2) + Math.pow(b.point.y - line.y1, 2));
+          return distA - distB;
+        });
+
+        intersections.push({
+          x: validIntersections[0].point.x,
+          y: validIntersections[0].point.y,
+          line1: line,
+          object: image,
+          type: 'entry'
+        });
+
+        intersections.push({
+          x: validIntersections[validIntersections.length - 1].point.x,
+          y: validIntersections[validIntersections.length - 1].point.y,
+          line1: line,
+          object: image,
+          type: 'exit'
+        });
+      }
     });
   });
 
@@ -1535,41 +1774,88 @@ function getObjectRect(obj) {
 }
 
 // Поиск пересечений линии с прямоугольником
+// Поиск пересечений линии с прямоугольником - улучшенная версия
 function getLineRectIntersections(line, rect) {
   const intersections = [];
-  const segments = [
-    { // верхняя сторона
+
+  // Определяем стороны прямоугольника
+  const sides = [
+    { // Верхняя сторона
       p1: { x: rect.left, y: rect.top },
       p2: { x: rect.right, y: rect.top }
     },
-    { // правая сторона
+    { // Правая сторона
       p1: { x: rect.right, y: rect.top },
       p2: { x: rect.right, y: rect.bottom }
     },
-    { // нижняя сторона
+    { // Нижняя сторона
       p1: { x: rect.right, y: rect.bottom },
       p2: { x: rect.left, y: rect.bottom }
     },
-    { // левая сторона
+    { // Левая сторона
       p1: { x: rect.left, y: rect.bottom },
       p2: { x: rect.left, y: rect.top }
     }
   ];
 
-  segments.forEach(segment => {
+  sides.forEach(side => {
     const inter = lineSegmentIntersection(
       { x1: line.x1, y1: line.y1, x2: line.x2, y2: line.y2 },
-      segment
+      side
     );
+
     if (inter) {
-      intersections.push({
-        point: { x: inter.x, y: inter.y },
-        segment: segment
-      });
+      // Проверяем, что точка находится внутри отрезка
+      const dx = side.p2.x - side.p1.x;
+      const dy = side.p2.y - side.p1.y;
+      let t;
+
+      if (Math.abs(dx) > Math.abs(dy)) {
+        t = (inter.x - side.p1.x) / dx;
+      } else {
+        t = (inter.y - side.p1.y) / dy;
+      }
+
+      if (t >= 0 && t <= 1) {
+        intersections.push({
+          point: { x: inter.x, y: inter.y },
+          side: side,
+          t: t
+        });
+      }
     }
   });
 
-  return intersections;
+  // Убираем дубликаты
+  const uniqueIntersections = [];
+  const seen = new Set();
+
+  intersections.forEach(inter => {
+    const key = `${Math.round(inter.point.x * 10)}_${Math.round(inter.point.y * 10)}`;
+    if (!seen.has(key)) {
+      seen.add(key);
+      uniqueIntersections.push(inter);
+    }
+  });
+
+  return uniqueIntersections;
+}
+
+// Принудительное обновление всех пересечений
+function refreshAllIntersections() {
+  clearIntersectionPoints();
+  intersectionPoints = findAllIntersections();
+
+  intersectionPoints.forEach((inter, index) => {
+    createIntersectionPoint(inter.x, inter.y, index, inter);
+  });
+
+  bringIntersectionPointsToFront();
+  canvas.renderAll();
+
+  if (intersectionPoints.length > 0) {
+    showNotification(`Обновлено ${intersectionPoints.length} точек пересечения`, 'info');
+  }
 }
 
 // Поднять все точки пересечения на передний план
@@ -1793,7 +2079,106 @@ function splitLineAtPoint(line, point) {
   return { line1, line2 };
 }
 
+// Разделение линии по нескольким точкам сразу
+function splitLineAtMultiplePoints(line, points) {
+  if (!line || points.length === 0) return null;
+
+  // Сортируем точки по расстоянию от начала линии
+  points.sort((a, b) => {
+    const distA = Math.sqrt(Math.pow(a.x - line.x1, 2) + Math.pow(a.y - line.y1, 2));
+    const distB = Math.sqrt(Math.pow(b.x - line.x1, 2) + Math.pow(b.y - line.y1, 2));
+    return distA - distB;
+  });
+
+  // Проверяем, что точки находятся на линии и не слишком близко к концам
+  const validPoints = [];
+  points.forEach(point => {
+    // Проверяем, лежит ли точка на линии
+    const lineVector = { x: line.x2 - line.x1, y: line.y2 - line.y1 };
+    const pointVector = { x: point.x - line.x1, y: point.y - line.y1 };
+
+    const dotProduct = lineVector.x * pointVector.x + lineVector.y * pointVector.y;
+    const lineLengthSquared = lineVector.x * lineVector.x + lineVector.y * lineVector.y;
+    const t = dotProduct / lineLengthSquared;
+
+    // Проверяем, что точка действительно на отрезке и не слишком близко к концам
+    if (t > 0.01 && t < 0.99) {
+      const distance1 = Math.sqrt(Math.pow(point.x - line.x1, 2) + Math.pow(point.y - line.y1, 2));
+      const distance2 = Math.sqrt(Math.pow(point.x - line.x2, 2) + Math.pow(point.y - line.y2, 2));
+
+      if (distance1 > 5 && distance2 > 5) {
+        validPoints.push(point);
+      }
+    }
+  });
+
+  if (validPoints.length === 0) return null;
+
+  // Создаем сегменты
+  const segments = [];
+  let currentStart = { x: line.x1, y: line.y1 };
+
+  validPoints.forEach((point, index) => {
+    segments.push({
+      start: currentStart,
+      end: { x: point.x, y: point.y },
+      isLast: index === validPoints.length - 1
+    });
+    currentStart = { x: point.x, y: point.y };
+  });
+
+  // Добавляем последний сегмент
+  segments.push({
+    start: currentStart,
+    end: { x: line.x2, y: line.y2 },
+    isLast: true
+  });
+
+  // Удаляем исходную линию
+  saveToUndoStack();
+  canvas.remove(line);
+
+  // Создаем новые линии для каждого сегмента
+  const newLines = [];
+
+  segments.forEach(segment => {
+    const length = Math.sqrt(
+      Math.pow(segment.end.x - segment.start.x, 2) +
+      Math.pow(segment.end.y - segment.start.y, 2)
+    );
+
+    // Пропускаем слишком короткие сегменты
+    if (length < 2) return;
+
+    const newLine = new fabric.Line([
+      segment.start.x, segment.start.y,
+      segment.end.x, segment.end.y
+    ], {
+      stroke: line.stroke,
+      strokeWidth: line.strokeWidth,
+      strokeDashArray: line.strokeDashArray,
+      fill: false,
+      strokeLineCap: 'round',
+      hasControls: true,
+      hasBorders: true,
+      lockRotation: false,
+      properties: { ...line.properties }
+    });
+
+    if (newLine.properties) {
+      newLine.properties.length = length;
+    }
+
+    canvas.add(newLine);
+    newLines.push(newLine);
+  });
+
+  return newLines;
+}
+
 // Разделение линий по изображению
+// Разделение линий по изображению
+// Разделение линий по изображению - исправленная версия
 function splitLinesAtImagePosition(image) {
   const lines = canvas.getObjects().filter(obj =>
     obj.type === 'line' && obj.id !== 'grid-line'
@@ -1805,459 +2190,140 @@ function splitLinesAtImagePosition(image) {
   lines.forEach(line => {
     const intersections = getLineRectIntersections(line, rect);
 
-    if (intersections.length >= 2) {
+    // Отфильтровываем пересечения слишком близко к концам линии
+    const validIntersections = intersections.filter(inter => {
+      // Проверяем расстояние от точки до концов линии
+      const distToStart = Math.sqrt(
+        Math.pow(inter.point.x - line.x1, 2) +
+        Math.pow(inter.point.y - line.y1, 2)
+      );
+      const distToEnd = Math.sqrt(
+        Math.pow(inter.point.x - line.x2, 2) +
+        Math.pow(inter.point.y - line.y2, 2)
+      );
+
+      // Игнорируем точки слишком близко к концам (меньше 5 пикселей)
+      return distToStart > 5 && distToEnd > 5;
+    });
+
+    if (validIntersections.length >= 2) {
       // Сортируем точки по расстоянию от начала линии
-      intersections.sort((a, b) => {
-        const distA = Math.sqrt(Math.pow(a.point.x - line.x1, 2) + Math.pow(a.point.y - line.y1, 2));
-        const distB = Math.sqrt(Math.pow(b.point.x - line.x1, 2) + Math.pow(b.point.y - line.y1, 2));
+      validIntersections.sort((a, b) => {
+        const distA = Math.sqrt(
+          Math.pow(a.point.x - line.x1, 2) +
+          Math.pow(a.point.y - line.y1, 2)
+        );
+        const distB = Math.sqrt(
+          Math.pow(b.point.x - line.x1, 2) +
+          Math.pow(b.point.y - line.y1, 2)
+        );
         return distA - distB;
       });
 
-      // Разделяем линию на сегменты
-      const segments = [];
-      let currentStart = { x: line.x1, y: line.y1 };
+      // Берем первую и последнюю точку пересечения (вход и выход)
+      const entryPoint = validIntersections[0].point;
+      const exitPoint = validIntersections[validIntersections.length - 1].point;
 
-      intersections.forEach((inter, index) => {
-        if (index === 0) {
-          // Сегмент до первого пересечения
-          segments.push({
-            start: currentStart,
-            end: inter.point
+      // Создаем сегменты линии
+      const segments = [
+        { // Сегмент до объекта
+          start: { x: line.x1, y: line.y1 },
+          end: entryPoint
+        },
+        { // Сегмент внутри объекта (будет удален)
+          start: entryPoint,
+          end: exitPoint
+        },
+        { // Сегмент после объекта
+          start: exitPoint,
+          end: { x: line.x2, y: line.y2 }
+        }
+      ];
+
+      // Удаляем исходную линию
+      saveToUndoStack();
+      canvas.remove(line);
+
+      // Добавляем только первый и третий сегмент (удаляем внутренний)
+      [segments[0], segments[2]].forEach(segment => {
+        const length = Math.sqrt(
+          Math.pow(segment.end.x - segment.start.x, 2) +
+          Math.pow(segment.end.y - segment.start.y, 2)
+        );
+
+        // Добавляем только сегменты достаточной длины
+        if (length > 2) {
+          const newLine = new fabric.Line([
+            segment.start.x, segment.start.y,
+            segment.end.x, segment.end.y
+          ], {
+            stroke: line.stroke,
+            strokeWidth: line.strokeWidth,
+            strokeDashArray: line.strokeDashArray,
+            fill: false,
+            strokeLineCap: 'round',
+            hasControls: true,
+            hasBorders: true,
+            lockRotation: false,
+            properties: { ...line.properties }
           });
-        } else if (index === intersections.length - 1) {
-          // Сегмент после последнего пересечения
-          segments.push({
-            start: inter.point,
-            end: { x: line.x2, y: line.y2 }
-          });
+
+          if (newLine.properties) {
+            newLine.properties.length = length;
+          }
+
+          canvas.add(newLine);
+          splitCount++;
         }
       });
 
-      if (segments.length > 0) {
-        // Удаляем старую линию и добавляем новые сегменты
-        saveToUndoStack();
-        canvas.remove(line);
-
-        segments.forEach(segment => {
-          const segLength = Math.sqrt(
-            Math.pow(segment.end.x - segment.start.x, 2) +
-            Math.pow(segment.end.y - segment.start.y, 2)
-          );
-
-          if (segLength > 1) {
-            const newLine = new fabric.Line([
-              segment.start.x, segment.start.y,
-              segment.end.x, segment.end.y
-            ], {
-              stroke: line.stroke,
-              strokeWidth: line.strokeWidth,
-              strokeDashArray: line.strokeDashArray,
-              fill: false,
-              strokeLineCap: 'round',
-              hasControls: true,
-              hasBorders: true,
-              lockRotation: false,
-              properties: { ...line.properties }
-            });
-
-            if (newLine.properties) {
-              newLine.properties.length = segLength;
-            }
-
-            canvas.add(newLine);
-            splitCount++;
-          }
+      // Создаем точки пересечения для визуализации
+      if (lineSplitMode !== 'MANUAL' || autoSplitMode) {
+        createIntersectionPoint(entryPoint.x, entryPoint.y, intersectionPoints.length, {
+          x: entryPoint.x,
+          y: entryPoint.y,
+          line1: line,
+          object: image,
+          type: 'entry'
         });
+
+        createIntersectionPoint(exitPoint.x, exitPoint.y, intersectionPoints.length + 1, {
+          x: exitPoint.x,
+          y: exitPoint.y,
+          line1: line,
+          object: image,
+          type: 'exit'
+        });
+
+        // Сохраняем точки пересечения
+        intersectionPoints.push(
+          {
+            x: entryPoint.x,
+            y: entryPoint.y,
+            line1: line,
+            object: image,
+            type: 'entry'
+          },
+          {
+            x: exitPoint.x,
+            y: exitPoint.y,
+            line1: line,
+            object: image,
+            type: 'exit'
+          }
+        );
+
+        bringIntersectionPointsToFront();
       }
     }
   });
 
   if (splitCount > 0) {
-    showNotification(`Разделено ${splitCount} линий`, 'success');
+    showNotification(`Разделено ${splitCount} линий по изображению`, 'success');
   }
+
+  canvas.renderAll();
 }
-
-// ==================== МОДАЛЬНОЕ ОКНО ИНФОРМАЦИИ О ТОЧКЕ ====================
-// function showIntersectionPointInfo(pointIndex) {
-//   const pointData = intersectionPoints[pointIndex];
-//   if (!pointData) return;
-//
-//   const allLines = canvas.getObjects().filter(obj =>
-//     obj.type === 'line' && obj.id !== 'grid-line'
-//   );
-//
-//   const linesStartingHere = [];
-//   const linesEndingHere = [];
-//   const threshold = 5;
-//
-//   allLines.forEach(line => {
-//     const startDist = Math.sqrt(Math.pow(line.x1 - pointData.x, 2) + Math.pow(line.y1 - pointData.y, 2));
-//     const endDist = Math.sqrt(Math.pow(line.x2 - pointData.x, 2) + Math.pow(line.y2 - pointData.y, 2));
-//
-//     if (startDist < threshold) {
-//       linesStartingHere.push({
-//         line: line,
-//         type: 'start',
-//         distance: startDist
-//       });
-//     } else if (endDist < threshold) {
-//       linesEndingHere.push({
-//         line: line,
-//         type: 'end',
-//         distance: endDist
-//       });
-//     }
-//   });
-//
-//   let html = `
-//     <div class="property-group">
-//       <h4>📌 Точка разделения #${pointIndex + 1}</h4>
-//       <div class="property-row">
-//         <div class="property-label">Координаты:</div>
-//         <div class="property-value">X: ${pointData.x.toFixed(1)}, Y: ${pointData.y.toFixed(1)}</div>
-//       </div>
-//       <div class="property-row">
-//         <div class="property-label">Линий начинается:</div>
-//         <div class="property-value">${linesStartingHere.length}</div>
-//       </div>
-//       <div class="property-row">
-//         <div class="property-label">Линий заканчивается:</div>
-//         <div class="property-value">${linesEndingHere.length}</div>
-//       </div>
-//     </div>
-//   `;
-//
-//   if (linesStartingHere.length > 0) {
-//     html += `
-//       <div class="property-group">
-//         <h4>🟢 Линии, начинающиеся в точке:</h4>
-//     `;
-//
-//     linesStartingHere.forEach((lineInfo, index) => {
-//       const line = lineInfo.line;
-//       const props = line.properties || {};
-//       html += `
-//         <div class="intersection-line-item">
-//           <div class="line-end-marker">Н</div>
-//           <div>
-//             <strong>${props.name || `Линия ${index + 1}`}</strong><br>
-//             <small>Длина: ${props.length ? props.length.toFixed(1) : 'н/д'} px</small>
-//           </div>
-//         </div>
-//       `;
-//     });
-//
-//     html += `</div>`;
-//   }
-//
-//   if (linesEndingHere.length > 0) {
-//     html += `
-//       <div class="property-group">
-//         <h4>🔴 Линии, заканчивающиеся в точке:</h4>
-//     `;
-//
-//     linesEndingHere.forEach((lineInfo, index) => {
-//       const line = lineInfo.line;
-//       const props = line.properties || {};
-//       html += `
-//         <div class="intersection-line-item">
-//           <div class="line-end-marker-bg">К</div>
-//           <div>
-//             <strong>${props.name || `Линия ${index + 1}`}</strong><br>
-//             <small>Длина: ${props.length ? props.length.toFixed(1) : 'н/д'} px</small>
-//           </div>
-//         </div>
-//       `;
-//     });
-//
-//     html += `</div>`;
-//   }
-//
-//   document.getElementById('intersectionPointInfo').innerHTML = html;
-//   document.getElementById('intersectionPointModal').style.display = 'flex';
-// }
-
-// function showIntersectionPointInfo(pointIndex) {
-//   const pointData = intersectionPoints[pointIndex];
-//   if (!pointData) return;
-
-//   const allLines = canvas.getObjects().filter(obj =>
-//     obj.type === 'line' && obj.id !== 'grid-line'
-//   );
-
-//   const allObjects = canvas.getObjects().filter(obj =>
-//     obj.type === 'image'
-//   );
-
-//   const linesStartingHere = [];
-//   const linesEndingHere = [];
-//   const objectsAtPoint = [];
-//   const threshold = 5;
-
-//   // Находим линии, начинающиеся/заканчивающиеся в точке
-//   allLines.forEach(line => {
-//     const startDist = Math.sqrt(Math.pow(line.x1 - pointData.x, 2) + Math.pow(line.y1 - pointData.y, 2));
-//     const endDist = Math.sqrt(Math.pow(line.x2 - pointData.x, 2) + Math.pow(line.y2 - pointData.y, 2));
-
-//     if (startDist < threshold) {
-//       linesStartingHere.push({
-//         line: line,
-//         type: 'start',
-//         distance: startDist
-//       });
-//     } else if (endDist < threshold) {
-//       linesEndingHere.push({
-//         line: line,
-//         type: 'end',
-//         distance: endDist
-//       });
-//     }
-//   });
-
-//   // Находим объекты в точке
-//   allObjects.forEach(obj => {
-//     const objRect = getObjectRect(obj);
-//     if (pointData.x >= objRect.left && pointData.x <= objRect.right &&
-//       pointData.y >= objRect.top && pointData.y <= objRect.bottom) {
-//       objectsAtPoint.push(obj);
-//     }
-//   });
-
-//   let html = `
-//     <div class="property-group">
-//       <h4>📌 Точка разделения #${pointIndex + 1}</h4>
-//       <div class="property-row">
-//         <div class="property-label">Координаты:</div>
-//         <div class="property-value">X: ${pointData.x.toFixed(1)}, Y: ${pointData.y.toFixed(1)}</div>
-//       </div>
-//       <div class="property-row">
-//         <div class="property-label">Линий начинается:</div>
-//         <div class="property-value">${linesStartingHere.length}</div>
-//       </div>
-//       <div class="property-row">
-//         <div class="property-label">Линий заканчивается:</div>
-//         <div class="property-value">${linesEndingHere.length}</div>
-//       </div>
-//       <div class="property-row">
-//         <div class="property-label">Объектов в точке:</div>
-//         <div class="property-value">${objectsAtPoint.length}</div>
-//       </div>
-//     </div>
-//   `;
-
-//   // Отображаем объекты в точке
-//   if (objectsAtPoint.length > 0) {
-//     html += `
-//       <div class="property-group">
-//         <h4>🖼️ Объекты в точке:</h4>
-//     `;
-
-//     objectsAtPoint.forEach((obj, index) => {
-//       const props = obj.properties || {};
-//       html += `
-//         <div class="property-group" style="margin-top: 10px; border-left: 3px solid #4A00E0; padding-left: 10px;">
-//           <h5 style="margin: 5px 0;">${props.name || `Объект ${index + 1}`}</h5>
-//           <div class="property-row">
-//             <div class="property-label">Тип:</div>
-//             <div class="property-value">${props.type || 'Не указан'}</div>
-//           </div>
-//           <div class="property-row">
-//             <div class="property-label">ID:</div>
-//             <div class="property-value">${props.imageId || 'Не указан'}</div>
-//           </div>
-//           <div class="property-row">
-//             <div class="property-label">Размер:</div>
-//             <div class="property-value">${Math.round(obj.width * obj.scaleX)} × ${Math.round(obj.height * obj.scaleY)} px</div>
-//           </div>
-//           <div class="property-row">
-//             <div class="property-label">Позиция:</div>
-//             <div class="property-value">${Math.round(obj.left)} × ${Math.round(obj.top)} px</div>
-//           </div>
-//           ${props.notes ? `
-//           <div class="property-row">
-//             <div class="property-label">Примечания:</div>
-//             <div class="property-value">${props.notes}</div>
-//           </div>
-//           ` : ''}
-//         </div>
-//       `;
-//     });
-
-//     html += `</div>`;
-//   }
-
-//   // Отображаем линии, начинающиеся в точке
-//   if (linesStartingHere.length > 0) {
-//     html += `
-//       <div class="property-group">
-//         <h4>🟢 Линии, начинающиеся в точке:</h4>
-//     `;
-
-//     linesStartingHere.forEach((lineInfo, index) => {
-//       const line = lineInfo.line;
-//       const props = line.properties || {};
-//       const length = Math.sqrt(Math.pow(line.x2 - line.x1, 2) + Math.pow(line.y2 - line.y1, 2));
-
-//       html += `
-//         <div class="property-group" style="margin-top: 10px; border-left: 3px solid #00b894; padding-left: 10px;">
-//           <h5 style="margin: 5px 0;">${props.name || `Линия ${index + 1}`} (начало)</h5>
-//           <div class="property-row">
-//             <div class="property-label">ID линии:</div>
-//             <div class="property-value">${line.id || 'Не указан'}</div>
-//           </div>
-//           <div class="property-row">
-//             <div class="property-label">Длина:</div>
-//             <div class="property-value">${length.toFixed(1)} px</div>
-//           </div>
-//           <div class="property-row">
-//             <div class="property-label">Координаты:</div>
-//             <div class="property-value">(${line.x1.toFixed(1)}, ${line.y1.toFixed(1)}) → (${line.x2.toFixed(1)}, ${line.y2.toFixed(1)})</div>
-//           </div>
-//           <div class="property-row">
-//             <div class="property-label">Цвет:</div>
-//             <div class="property-value">
-//               <span style="display: inline-block; width: 12px; height: 12px; background-color: ${line.stroke}; border: 1px solid #ccc;"></span>
-//               ${line.stroke}
-//             </div>
-//           </div>
-//           <div class="property-row">
-//             <div class="property-label">Толщина:</div>
-//             <div class="property-value">${line.strokeWidth} px</div>
-//           </div>
-//           <div class="property-row">
-//             <div class="property-label">L (м²):</div>
-//             <div class="property-value">${(props.L || 0).toFixed(4)}</div>
-//           </div>
-//           <div class="property-row">
-//             <div class="property-label">I:</div>
-//             <div class="property-value">${(props.I || 0).toFixed(6)}</div>
-//           </div>
-//           <div class="property-row">
-//             <div class="property-label">K (м):</div>
-//             <div class="property-value">${(props.K || 0).toFixed(3)}</div>
-//           </div>
-//           <div class="property-row">
-//             <div class="property-label">W (кг/м):</div>
-//             <div class="property-value">${(props.W || 0).toFixed(2)}</div>
-//           </div>
-//           ${props.notes ? `
-//           <div class="property-row">
-//             <div class="property-label">Примечания:</div>
-//             <div class="property-value">${props.notes}</div>
-//           </div>
-//           ` : ''}
-//         </div>
-//       `;
-//     });
-
-//     html += `</div>`;
-//   }
-
-//   // Отображаем линии, заканчивающиеся в точке
-//   if (linesEndingHere.length > 0) {
-//     html += `
-//       <div class="property-group">
-//         <h4>🔴 Линии, заканчивающиеся в точке:</h4>
-//     `;
-
-//     linesEndingHere.forEach((lineInfo, index) => {
-//       const line = lineInfo.line;
-//       const props = line.properties || {};
-//       const length = Math.sqrt(Math.pow(line.x2 - line.x1, 2) + Math.pow(line.y2 - line.y1, 2));
-
-//       html += `
-//         <div class="property-group" style="margin-top: 10px; border-left: 3px solid #e17055; padding-left: 10px;">
-//           <h5 style="margin: 5px 0;">${props.name || `Линия ${index + 1}`} (конец)</h5>
-//           <div class="property-row">
-//             <div class="property-label">ID линии:</div>
-//             <div class="property-value">${line.id || 'Не указан'}</div>
-//           </div>
-//           <div class="property-row">
-//             <div class="property-label">Длина:</div>
-//             <div class="property-value">${length.toFixed(1)} px</div>
-//           </div>
-//           <div class="property-row">
-//             <div class="property-label">Координаты:</div>
-//             <div class="property-value">(${line.x1.toFixed(1)}, ${line.y1.toFixed(1)}) → (${line.x2.toFixed(1)}, ${line.y2.toFixed(1)})</div>
-//           </div>
-//           <div class="property-row">
-//             <div class="property-label">Цвет:</div>
-//             <div class="property-value">
-//               <span style="display: inline-block; width: 12px; height: 12px; background-color: ${line.stroke}; border: 1px solid #ccc;"></span>
-//               ${line.stroke}
-//             </div>
-//           </div>
-//           <div class="property-row">
-//             <div class="property-label">Толщина:</div>
-//             <div class="property-value">${line.strokeWidth} px</div>
-//           </div>
-//           <div class="property-row">
-//             <div class="property-label">L (м²):</div>
-//             <div class="property-value">${(props.L || 0).toFixed(4)}</div>
-//           </div>
-//           <div class="property-row">
-//             <div class="property-label">I:</div>
-//             <div class="property-value">${(props.I || 0).toFixed(6)}</div>
-//           </div>
-//           <div class="property-row">
-//             <div class="property-label">K (м):</div>
-//             <div class="property-value">${(props.K || 0).toFixed(3)}</div>
-//           </div>
-//           <div class="property-row">
-//             <div class="property-label">W (кг/м):</div>
-//             <div class="property-value">${(props.W || 0).toFixed(2)}</div>
-//           </div>
-//           ${props.notes ? `
-//           <div class="property-row">
-//             <div class="property-label">Примечания:</div>
-//             <div class="property-value">${props.notes}</div>
-//           </div>
-//           ` : ''}
-//         </div>
-//       `;
-//     });
-
-//     html += `</div>`;
-//   }
-
-//   // Информация о самом пересечении
-//   if (pointData.line1 && pointData.line2) {
-//     html += `
-//       <div class="property-group">
-//         <h4>📐 Информация о пересечении:</h4>
-//         <div class="property-row">
-//           <div class="property-label">Тип:</div>
-//           <div class="property-value">Пересечение двух линий</div>
-//         </div>
-//         ${pointData.ua !== undefined ? `
-//         <div class="property-row">
-//           <div class="property-label">Положение на линии 1:</div>
-//           <div class="property-value">${(pointData.ua * 100).toFixed(1)}% от начала</div>
-//         </div>
-//         ` : ''}
-//         ${pointData.ub !== undefined ? `
-//         <div class="property-row">
-//           <div class="property-label">Положение на линии 2:</div>
-//           <div class="property-value">${(pointData.ub * 100).toFixed(1)}% от начала</div>
-//         </div>
-//         ` : ''}
-//       </div>
-//     `;
-//   } else if (pointData.line1 && pointData.object) {
-//     html += `
-//       <div class="property-group">
-//         <h4>📐 Информация о пересечении:</h4>
-//         <div class="property-row">
-//           <div class="property-label">Тип:</div>
-//           <div class="property-value">Пересечение линии с объектом</div>
-//         </div>
-//       </div>
-//     `;
-//   }
-
-//   document.getElementById('intersectionPointInfo').innerHTML = html;
-//   document.getElementById('intersectionPointModal').style.display = 'flex';
-// }
 
 function showIntersectionPointInfo(pointIndex) {
   const pointData = intersectionPoints[pointIndex];
