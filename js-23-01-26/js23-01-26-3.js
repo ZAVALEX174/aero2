@@ -845,143 +845,6 @@ function deleteCurrentObject() {
   showNotification('Объект удален', 'info');
 }
 
-// Обновить панель свойств с кнопкой редактирования
-// function updatePropertiesPanel() {
-//   const activeObj = canvas.getActiveObject();
-//   const propsContent = document.getElementById('props-content');
-
-//   if (!activeObj) {
-//     propsContent.innerHTML = `
-//       <p style="color: #7f8c8d; font-style: italic; text-align: center; padding: 20px;">
-//         Выберите объект на чертеже
-//       </p>
-//     `;
-//     return;
-//   }
-
-//   let content = `
-//     <div class="property-group">
-//       <h4>📄 Основные свойства</h4>
-//       <div class="property-row">
-//         <div class="property-label">Тип:</div>
-//         <div class="property-value"><strong>${activeObj.type}</strong></div>
-//       </div>
-//   `;
-
-//   if (activeObj.type === 'line') {
-//     const length = Math.sqrt(
-//       Math.pow(activeObj.x2 - activeObj.x1, 2) +
-//       Math.pow(activeObj.y2 - activeObj.y1, 2)
-//     );
-//     content += `
-//       <div class="property-row">
-//         <div class="property-label">Длина:</div>
-//         <div class="property-value">${Math.round(length)}px</div>
-//       </div>
-//     `;
-
-//     if (activeObj.properties) {
-//       content += `
-//         <div class="property-group">
-//           <h4>📊 Технические параметры</h4>
-//           <div class="property-row">
-//             <div class="property-label">Название:</div>
-//             <div class="property-value">${activeObj.properties.name || 'Без названия'}</div>
-//           </div>
-//           <div class="property-row">
-//             <div class="property-label">L (м²):</div>
-//             <div class="property-value">${(activeObj.properties.L || 0).toFixed(4)}</div>
-//           </div>
-//           <div class="property-row">
-//             <div class="property-label">I:</div>
-//             <div class="property-value">${(activeObj.properties.I || 0).toFixed(6)}</div>
-//           </div>
-//           <div class="property-row">
-//             <div class="property-label">K (м):</div>
-//             <div class="property-value">${(activeObj.properties.K || 0).toFixed(3)}</div>
-//           </div>
-//           <div class="property-row">
-//             <div class="property-label">W (кг/м):</div>
-//             <div class="property-value">${(activeObj.properties.W || 0).toFixed(2)}</div>
-//           </div>
-//         </div>
-//       `;
-//     }
-
-//     content += `
-//       <div style="margin-top: 15px; text-align: center;">
-//         <button onclick="showLinePropertiesModal()" style="padding: 8px 16px; font-size: 13px; margin-right: 5px;">
-//           ⚙️ Редактировать параметры линии
-//         </button>
-//         <button onclick="showObjectPropertiesModal()" style="padding: 8px 16px; font-size: 13px;">
-//           📝 Редактировать общие свойства
-//         </button>
-//       </div>
-//     `;
-//   } else if (activeObj.type === 'image') {
-//     const props = activeObj.properties || {};
-//     content += `
-//       <div class="property-row">
-//         <div class="property-label">Название:</div>
-//         <div class="property-value">${props.name || 'Изображение'}</div>
-//       </div>
-//       <div class="property-row">
-//         <div class="property-label">Тип:</div>
-//         <div class="property-value">${props.type || 'default'}</div>
-//       </div>
-//       <div class="property-row">
-//         <div class="property-label">Позиция:</div>
-//         <div class="property-value">${Math.round(activeObj.left)} × ${Math.round(activeObj.top)}</div>
-//       </div>
-//       <div class="property-row">
-//         <div class="property-label">Размер:</div>
-//         <div class="property-value">${Math.round(activeObj.width * activeObj.scaleX)} × ${Math.round(activeObj.height * activeObj.scaleY)} px</div>
-//       </div>
-//     `;
-
-//     if (props.notes) {
-//       content += `
-//         <div class="property-row">
-//           <div class="property-label">Примечания:</div>
-//           <div class="property-value">${props.notes}</div>
-//         </div>
-//       `;
-//     }
-
-//     content += `
-//       <div style="margin-top: 15px; text-align: center;">
-//         <button onclick="showObjectPropertiesModal()" style="padding: 8px 16px; font-size: 13px;">
-//           ⚙️ Редактировать свойства
-//         </button>
-//       </div>
-//     `;
-//   } else {
-//     // Для других типов объектов
-//     const props = activeObj.properties || {};
-//     content += `
-//       <div class="property-row">
-//         <div class="property-label">Название:</div>
-//         <div class="property-value">${props.name || activeObj.type}</div>
-//       </div>
-//       <div class="property-row">
-//         <div class="property-label">Позиция:</div>
-//         <div class="property-value">${Math.round(activeObj.left)} × ${Math.round(activeObj.top)}</div>
-//       </div>
-//     `;
-
-//     content += `
-//       <div style="margin-top: 15px; text-align: center;">
-//         <button onclick="showObjectPropertiesModal()" style="padding: 8px 16px; font-size: 13px;">
-//           ⚙️ Редактировать свойства
-//         </button>
-//       </div>
-//     `;
-//   }
-
-//   content += `</div>`;
-//   propsContent.innerHTML = content;
-// }
-
 // ==================== ОБНОВЛЕНИЕ ПАНЕЛИ СВОЙСТВ ====================
 function updatePropertiesPanel() {
   const activeObj = canvas.getActiveObject();
@@ -1918,8 +1781,8 @@ function createIntersectionPoint(x, y, index, intersectionData) {
   const text = new fabric.Text((index + 1).toString(), {
     left: x,
     top: y,
-    fontSize: 10,
-    fill: 'white',
+    fontSize: 32,
+    fill: '#667eea',
     fontWeight: 'bold',
     selectable: false,
     evented: false,
