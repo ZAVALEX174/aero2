@@ -26,80 +26,171 @@ let currentEditingObjectType = null;
 const defaultImages = [
   {
     id: 'fan1',
+    name: 'Вентилятор основной',
+    icon: '🌀',
+    path: './img/fan.png',
+    type: 'fan'
+  },
+  {
+    id: 'fan2',
     name: 'Вентилятор',
     icon: '🌀',
-    path: 'https://cdn-icons-png.flaticon.com/512/3067/3067270.png',
+    path: './img/fan2.png',
     type: 'fan'
   },
   {
     id: 'fire',
     name: 'Датчик пожарный',
     icon: '🔥',
-    path: 'https://cdn-icons-png.flaticon.com/512/3067/3067260.png',
+    path: './img/fire.png',
+    type: 'fire'
+  },
+  {
+    id: 'fire2',
+    name: 'Пожарный гидрант',
+    icon: '🔥',
+    path: './img/pozarniigidrant.png',
+    type: 'fire'
+  },
+  {
+    id: 'fire2',
+    name: 'Пожарный склад',
+    icon: '🔥',
+    path: './img/scladprotivopozar.png',
     type: 'fire'
   },
   {
     id: 'valve',
-    name: 'Клапан',
+    name: 'Дверь Закрытая',
     icon: '🔧',
-    path: 'https://cdn-icons-png.flaticon.com/512/3067/3067256.png',
+    path: './img/dvercloses.png',
+    type: 'valve'
+  },
+  {
+    id: 'valve2',
+    name: 'Дверь металлическая открытая',
+    icon: '🔧',
+    path: './img/dveropenmetall.png',
+    type: 'valve'
+  },
+  {
+    id: 'valve3',
+    name: 'Дверь с вент решоткой',
+    icon: '🔧',
+    path: './img/dverventrech.png',
+    type: 'valve'
+  },
+  {
+    id: 'valve4',
+    name: 'Дверь деревянная с вент окном',
+    icon: '🔧',
+    path: './img/dverwentoknowood.png',
+    type: 'valve'
+  },
+  {
+    id: 'valve5',
+    name: 'Перемычка бетонная',
+    icon: '🔧',
+    path: './img/petemichkabeton.png',
+    type: 'valve'
+  },
+  {
+    id: 'valve6',
+    name: 'Перемычка кирпичная',
+    icon: '🔧',
+    path: './img/petemichkakirpich.png',
+    type: 'valve'
+  },
+  {
+    id: 'valve7',
+    name: 'Перемычка металличесая',
+    icon: '🔧',
+    path: './img/petemichkametall.png',
+    type: 'valve'
+  },
+  {
+    id: 'valve8',
+    name: 'Перемычка деревянная',
+    icon: '🔧',
+    path: './img/petemichkawood.png',
+    type: 'valve'
+  },
+  {
+    id: 'valve9',
+    name: 'Проход',
+    icon: '🔧',
+    path: './img/prohod.png',
+    type: 'valve'
+  },
+  {
+    id: 'valve10',
+    name: 'Запасной вход',
+    icon: '🔧',
+    path: './img/zapasvhod.png',
     type: 'valve'
   },
   {
     id: 'pump',
-    name: 'Насос',
+    name: 'Насос погружной',
     icon: '⚙️',
-    path: 'https://cdn-icons-png.flaticon.com/512/3067/3067266.png',
+    path: './img/nanospogruznoi.png',
+    type: 'pump'
+  },
+  {
+    id: 'pump2',
+    name: 'Насосная станция',
+    icon: '⚙️',
+    path: './img/nasosnayastancia.png',
     type: 'pump'
   },
   {
     id: 'sensor',
-    name: 'Датчик',
+    name: 'Самоходное оборудование',
     icon: '📡',
-    path: 'https://cdn-icons-png.flaticon.com/512/3067/3067260.png',
+    path: './img/samohodnoe.png',
     type: 'sensor'
   },
   {
     id: 'sensor3',
-    name: 'Вентилятор основной',
+    name: 'Люди',
     icon: '📡',
-    path: './img/fan.png',
-    type: 'sensor3'
+    path: './img/people.png',
+    type: 'sensor'
   },
   {
     id: 'sensor3',
-    name: 'Вентилятор основной',
+    name: 'Телефон',
     icon: '📡',
-    path: './img/fan.png',
-    type: 'sensor3'
+    path: './img/phone.png',
+    type: 'sensor'
   },
   {
     id: 'sensor3',
-    name: 'Вентилятор основной',
+    name: 'Взрывные работы',
     icon: '📡',
-    path: './img/fan.png',
-    type: 'sensor3'
+    path: './img/vzrivnieraboti.png',
+    type: 'sensor'
   },
   {
     id: 'sensor3',
-    name: 'Вентилятор основной',
+    name: 'Массовые взрывные работы',
     icon: '📡',
-    path: './img/fan.png',
-    type: 'sensor3'
+    path: './img/massovievzivniepaboti.png',
+    type: 'sensor'
   },
   {
     id: 'sensor3',
-    name: 'Вентилятор основной',
+    name: 'Медпункт',
     icon: '📡',
-    path: './img/fan.png',
-    type: 'sensor3'
+    path: './img/medpunkt.png',
+    type: 'sensor'
   },
   {
     id: 'sensor3',
-    name: 'Вентилятор основной',
+    name: 'Надшахтное оборудование',
     icon: '📡',
-    path: './img/fan.png',
-    type: 'sensor3'
+    path: './img/nadshahtnoe.png',
+    type: 'sensor'
   }
 ];
 
@@ -426,7 +517,7 @@ function setupCanvasEvents() {
       }
 
       if (!lineStartPoint) {
-        lineStartPoint = { x: snappedX, y: snappedY };
+        lineStartPoint = {x: snappedX, y: snappedY};
         previewLine = new fabric.Line([
           lineStartPoint.x, lineStartPoint.y, snappedX, snappedY
         ], {
@@ -461,7 +552,7 @@ function setupCanvasEvents() {
             W: parseFloat(document.getElementById('propertyW')?.value) || 1.0,
             length: length,
             startPoint: lineStartPoint,
-            endPoint: { x: snappedX, y: snappedY }
+            endPoint: {x: snappedX, y: snappedY}
           }
         });
 
@@ -470,10 +561,10 @@ function setupCanvasEvents() {
         canvas.setActiveObject(finalLine);
         updatePropertiesPanel();
 
-        lastLineEndPoint = { x: snappedX, y: snappedY };
+        lastLineEndPoint = {x: snappedX, y: snappedY};
 
         if (isContinuousLineMode) {
-          lineStartPoint = { x: snappedX, y: snappedY };
+          lineStartPoint = {x: snappedX, y: snappedY};
           if (previewLine) {
             previewLine.set({
               x1: lineStartPoint.x,
@@ -523,7 +614,7 @@ function setupCanvasEvents() {
     if (isDrawingLine && lineStartPoint && previewLine) {
       const snappedX = snapToGrid(pointer.x, 20);
       const snappedY = snapToGrid(pointer.y, 20);
-      previewLine.set({ x2: snappedX, y2: snappedY });
+      previewLine.set({x2: snappedX, y2: snappedY});
       previewLine.setCoords();
       canvas.requestRenderAll();
     }
@@ -634,13 +725,11 @@ function showObjectPropertiesModal() {
 
     // Показываем только нужные поля для изображений
     document.querySelectorAll('.form-group').forEach(el => el.style.display = 'block');
-  }
-  else if (activeObject.type === 'line') {
+  } else if (activeObject.type === 'line') {
     // Для линий показываем специальную форму
     showLinePropertiesModal();
     return;
-  }
-  else {
+  } else {
     // Для других типов объектов
     document.getElementById('objPropertyName').value = props.name || activeObject.type || '';
     document.getElementById('objPropertyType').value = props.type || 'custom';
@@ -1065,7 +1154,7 @@ function saveDrawing() {
   const json = JSON.stringify(canvas.toJSON(['id', 'properties', 'pointIndex', 'pointData']));
   localStorage.setItem('fabricDrawing', json);
 
-  const blob = new Blob([json], { type: 'application/json' });
+  const blob = new Blob([json], {type: 'application/json'});
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
@@ -1080,27 +1169,6 @@ function saveDrawing() {
 }
 
 // ==================== ИНИЦИАЛИЗАЦИЯ МОДАЛЬНЫХ ОКОН ====================
-// function initializeModals() {
-//   document.getElementById('linePropertiesForm')?.addEventListener('submit', function (e) {
-//     e.preventDefault();
-//     applyLineProperties();
-//   });
-//
-//   document.getElementById('addImageForm')?.addEventListener('submit', function (e) {
-//     e.preventDefault();
-//     addNewImage();
-//   });
-//
-//   document.getElementById('objectPropertiesForm')?.addEventListener('submit', function (e) {
-//     e.preventDefault();
-//     applyObjectProperties();
-//   });
-//
-//   document.getElementById('objPropertyOpacity')?.addEventListener('input', function (e) {
-//     document.getElementById('opacityValue').textContent = e.target.value + '%';
-//   });
-// }
-
 // ==================== ИНИЦИАЛИЗАЦИЯ МОДАЛЬНЫХ ОКОН ====================
 function initializeModals() {
   // Форма свойств линии
@@ -1470,31 +1538,31 @@ function getLineRectIntersections(line, rect) {
   const intersections = [];
   const segments = [
     { // верхняя сторона
-      p1: { x: rect.left, y: rect.top },
-      p2: { x: rect.right, y: rect.top }
+      p1: {x: rect.left, y: rect.top},
+      p2: {x: rect.right, y: rect.top}
     },
     { // правая сторона
-      p1: { x: rect.right, y: rect.top },
-      p2: { x: rect.right, y: rect.bottom }
+      p1: {x: rect.right, y: rect.top},
+      p2: {x: rect.right, y: rect.bottom}
     },
     { // нижняя сторона
-      p1: { x: rect.right, y: rect.bottom },
-      p2: { x: rect.left, y: rect.bottom }
+      p1: {x: rect.right, y: rect.bottom},
+      p2: {x: rect.left, y: rect.bottom}
     },
     { // левая сторона
-      p1: { x: rect.left, y: rect.bottom },
-      p2: { x: rect.left, y: rect.top }
+      p1: {x: rect.left, y: rect.bottom},
+      p2: {x: rect.left, y: rect.top}
     }
   ];
 
   segments.forEach(segment => {
     const inter = lineSegmentIntersection(
-      { x1: line.x1, y1: line.y1, x2: line.x2, y2: line.y2 },
+      {x1: line.x1, y1: line.y1, x2: line.x2, y2: line.y2},
       segment
     );
     if (inter) {
       intersections.push({
-        point: { x: inter.x, y: inter.y },
+        point: {x: inter.x, y: inter.y},
         segment: segment
       });
     }
@@ -1532,7 +1600,7 @@ function lineSegmentIntersection(line1, segment) {
   if (ua >= 0 && ua <= 1 && ub >= 0 && ub <= 1) {
     const x = x1 + ua * (x2 - x1);
     const y = y1 + ua * (y2 - y1);
-    return { x: x, y: y };
+    return {x: x, y: y};
   }
 
   return null;
@@ -1587,7 +1655,7 @@ function createIntersectionPoint(x, y, index, intersectionData) {
   circle.bringToFront();
   text.bringToFront();
 
-  intersectionVisuals.push({ circle, text });
+  intersectionVisuals.push({circle, text});
 
   return circle;
 }
@@ -1698,7 +1766,7 @@ function splitLineAtPoint(line, point) {
     hasControls: true,
     hasBorders: true,
     lockRotation: false,
-    properties: { ...line.properties }
+    properties: {...line.properties}
   });
 
   // Создаем вторую часть линии
@@ -1714,14 +1782,14 @@ function splitLineAtPoint(line, point) {
     hasControls: true,
     hasBorders: true,
     lockRotation: false,
-    properties: { ...line.properties }
+    properties: {...line.properties}
   });
 
   // Обновляем длину в свойствах
   if (line1.properties) line1.properties.length = distance1;
   if (line2.properties) line2.properties.length = distance2;
 
-  return { line1, line2 };
+  return {line1, line2};
 }
 
 // Разделение линий по изображению
@@ -1746,7 +1814,7 @@ function splitLinesAtImagePosition(image) {
 
       // Разделяем линию на сегменты
       const segments = [];
-      let currentStart = { x: line.x1, y: line.y1 };
+      let currentStart = {x: line.x1, y: line.y1};
 
       intersections.forEach((inter, index) => {
         if (index === 0) {
@@ -1759,7 +1827,7 @@ function splitLinesAtImagePosition(image) {
           // Сегмент после последнего пересечения
           segments.push({
             start: inter.point,
-            end: { x: line.x2, y: line.y2 }
+            end: {x: line.x2, y: line.y2}
           });
         }
       });
@@ -1788,7 +1856,7 @@ function splitLinesAtImagePosition(image) {
               hasControls: true,
               hasBorders: true,
               lockRotation: false,
-              properties: { ...line.properties }
+              properties: {...line.properties}
             });
 
             if (newLine.properties) {
@@ -2607,7 +2675,7 @@ function showIntersectionPointInfo(pointIndex) {
     canvas.setZoom(zoomLevel);
     const centerX = x - canvas.width / (2 * zoomLevel);
     const centerY = y - canvas.height / (2 * zoomLevel);
-    canvas.absolutePan({ x: -centerX, y: -centerY });
+    canvas.absolutePan({x: -centerX, y: -centerY});
     showNotification('Приближено к точке', 'info');
   };
 
@@ -2736,7 +2804,7 @@ function showIntersectionPointInfo(pointIndex) {
       canvas.setZoom(zoomLevel);
       const centerX = object.left - canvas.width / (2 * zoomLevel);
       const centerY = object.top - canvas.height / (2 * zoomLevel);
-      canvas.absolutePan({ x: -centerX, y: -centerY });
+      canvas.absolutePan({x: -centerX, y: -centerY});
 
       showNotification('Объект выделен и приближен', 'success');
     }
@@ -2762,7 +2830,7 @@ function showIntersectionPointInfo(pointIndex) {
   window.splitLineAtThisPoint = function (lineId, pointIndex, x, y) {
     const line = canvas.getObjects().find(obj => (obj.id === lineId || obj._id === lineId) && obj.type === 'line');
     if (line) {
-      const splitResult = splitLineAtPoint(line, { x, y });
+      const splitResult = splitLineAtPoint(line, {x, y});
       if (splitResult) {
         saveToUndoStack();
         canvas.remove(line);
@@ -2810,7 +2878,7 @@ function saveDrawing() {
   const json = JSON.stringify(canvas.toJSON(['id', 'properties']));
   localStorage.setItem('fabricDrawing', json);
 
-  const blob = new Blob([json], { type: 'application/json' });
+  const blob = new Blob([json], {type: 'application/json'});
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
