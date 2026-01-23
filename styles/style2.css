@@ -453,6 +453,7 @@ h1 {
     transform: translateX(100%);
     opacity: 0;
   }
+
   to {
     transform: translateX(0);
     opacity: 1;
@@ -557,7 +558,8 @@ h1 {
   border-left: 3px solid #00b894;
 }
 
-.line-end-marker, .line-end-marker-bg {
+.line-end-marker,
+.line-end-marker-bg {
   min-width: 20px;
   height: 20px;
   border-radius: 50%;
@@ -599,7 +601,8 @@ h1 {
   border-bottom: none;
 }
 
-.property-group h4, .property-group h5 {
+.property-group h4,
+.property-group h5 {
   margin: 10px 0 5px 0;
   color: #2d3436;
 }

@@ -19,6 +19,9 @@ let lineSplitMode = 'AUTO';
 let intersectionPoints = [];
 let intersectionVisuals = [];
 
+let currentEditingObject = null;
+let currentEditingObjectType = null;
+
 // Изображения
 const defaultImages = [
   {
@@ -58,7 +61,42 @@ const defaultImages = [
   },
   {
     id: 'sensor3',
-    name: 'Датчик3',
+    name: 'Вентилятор основной',
+    icon: '📡',
+    path: './img/fan.png',
+    type: 'sensor3'
+  },
+  {
+    id: 'sensor3',
+    name: 'Вентилятор основной',
+    icon: '📡',
+    path: './img/fan.png',
+    type: 'sensor3'
+  },
+  {
+    id: 'sensor3',
+    name: 'Вентилятор основной',
+    icon: '📡',
+    path: './img/fan.png',
+    type: 'sensor3'
+  },
+  {
+    id: 'sensor3',
+    name: 'Вентилятор основной',
+    icon: '📡',
+    path: './img/fan.png',
+    type: 'sensor3'
+  },
+  {
+    id: 'sensor3',
+    name: 'Вентилятор основной',
+    icon: '📡',
+    path: './img/fan.png',
+    type: 'sensor3'
+  },
+  {
+    id: 'sensor3',
+    name: 'Вентилятор основной',
     icon: '📡',
     path: './img/fan.png',
     type: 'sensor3'
@@ -204,6 +242,7 @@ function activateImagePlacementMode(image) {
   canvas.selection = false;
 
   showNotification(`Режим добавления: ${image.name}. Shift+клик для размещения`, 'info');
+  showNotification(`Режим добавления: ${image.name}. Кликните на холст для размещения.`, 'info');
 }
 
 // ==================== РИСОВАНИЕ ЛИНИЙ ====================
@@ -387,7 +426,7 @@ function setupCanvasEvents() {
       }
 
       if (!lineStartPoint) {
-        lineStartPoint = {x: snappedX, y: snappedY};
+        lineStartPoint = { x: snappedX, y: snappedY };
         previewLine = new fabric.Line([
           lineStartPoint.x, lineStartPoint.y, snappedX, snappedY
         ], {
@@ -422,7 +461,7 @@ function setupCanvasEvents() {
             W: parseFloat(document.getElementById('propertyW')?.value) || 1.0,
             length: length,
             startPoint: lineStartPoint,
-            endPoint: {x: snappedX, y: snappedY}
+            endPoint: { x: snappedX, y: snappedY }
           }
         });
 
@@ -431,10 +470,10 @@ function setupCanvasEvents() {
         canvas.setActiveObject(finalLine);
         updatePropertiesPanel();
 
-        lastLineEndPoint = {x: snappedX, y: snappedY};
+        lastLineEndPoint = { x: snappedX, y: snappedY };
 
         if (isContinuousLineMode) {
-          lineStartPoint = {x: snappedX, y: snappedY};
+          lineStartPoint = { x: snappedX, y: snappedY };
           if (previewLine) {
             previewLine.set({
               x1: lineStartPoint.x,
@@ -449,6 +488,21 @@ function setupCanvasEvents() {
       }
       return;
     }
+
+    // Двойной клик по объекту для открытия свойств
+    canvas.on('mouse:dblclick', function (options) {
+      if (options.target) {
+        canvas.setActiveObject(options.target);
+        showObjectPropertiesModal();
+      }
+    });
+
+    // Клик по объекту для выбора
+    canvas.on('mouse:down', function (options) {
+      if (options.target && !isDrawingLine && !currentImageData) {
+        updatePropertiesPanel();
+      }
+    });
 
     // Контекстное меню (правая кнопка мыши)
     if (options.e.button === 2) {
@@ -469,7 +523,7 @@ function setupCanvasEvents() {
     if (isDrawingLine && lineStartPoint && previewLine) {
       const snappedX = snapToGrid(pointer.x, 20);
       const snappedY = snapToGrid(pointer.y, 20);
-      previewLine.set({x2: snappedX, y2: snappedY});
+      previewLine.set({ x2: snappedX, y2: snappedY });
       previewLine.setCoords();
       canvas.requestRenderAll();
     }
@@ -552,6 +606,479 @@ function setupKeyboardShortcuts() {
   document.addEventListener('click', hideContextMenu);
 }
 
+// Показать модальное окно свойств объекта
+function showObjectPropertiesModal() {
+  const activeObject = canvas.getActiveObject();
+  if (!activeObject) {
+    showNotification('Выберите объект для редактирования!', 'error');
+    return;
+  }
+
+  currentEditingObject = activeObject;
+  currentEditingObjectType = activeObject.type;
+  const props = activeObject.properties || {};
+
+  // Заполняем форму в зависимости от типа объекта
+  if (activeObject.type === 'image') {
+    document.getElementById('objPropertyName').value = props.name || '';
+    document.getElementById('objPropertyType').value = props.type || 'custom';
+    document.getElementById('objPropertyX').value = Math.round(activeObject.left);
+    document.getElementById('objPropertyY').value = Math.round(activeObject.top);
+    document.getElementById('objPropertyWidth').value = Math.round(activeObject.width * activeObject.scaleX);
+    document.getElementById('objPropertyHeight').value = Math.round(activeObject.height * activeObject.scaleY);
+    document.getElementById('objPropertyRotation').value = Math.round(activeObject.angle || 0);
+    document.getElementById('objPropertyOpacity').value = Math.round((activeObject.opacity || 1) * 100);
+    document.getElementById('opacityValue').textContent = Math.round((activeObject.opacity || 1) * 100) + '%';
+    document.getElementById('objPropertyNotes').value = props.notes || '';
+    document.getElementById('objPropertyCustomData').value = JSON.stringify(props.customData || {}, null, 2);
+
+    // Показываем только нужные поля для изображений
+    document.querySelectorAll('.form-group').forEach(el => el.style.display = 'block');
+  }
+  else if (activeObject.type === 'line') {
+    // Для линий показываем специальную форму
+    showLinePropertiesModal();
+    return;
+  }
+  else {
+    // Для других типов объектов
+    document.getElementById('objPropertyName').value = props.name || activeObject.type || '';
+    document.getElementById('objPropertyType').value = props.type || 'custom';
+    document.getElementById('objPropertyX').value = Math.round(activeObject.left);
+    document.getElementById('objPropertyY').value = Math.round(activeObject.top);
+
+    if (activeObject.width) {
+      document.getElementById('objPropertyWidth').value = Math.round(activeObject.width * (activeObject.scaleX || 1));
+      document.getElementById('objPropertyHeight').value = Math.round(activeObject.height * (activeObject.scaleY || 1));
+    } else {
+      document.getElementById('objPropertyWidth').parentElement.style.display = 'none';
+      document.getElementById('objPropertyHeight').parentElement.style.display = 'none';
+    }
+
+    document.getElementById('objPropertyRotation').value = Math.round(activeObject.angle || 0);
+    document.getElementById('objPropertyOpacity').value = Math.round((activeObject.opacity || 1) * 100);
+    document.getElementById('opacityValue').textContent = Math.round((activeObject.opacity || 1) * 100) + '%';
+    document.getElementById('objPropertyNotes').value = props.notes || '';
+    document.getElementById('objPropertyCustomData').value = JSON.stringify(props.customData || {}, null, 2);
+  }
+
+  document.getElementById('objectPropertiesModal').style.display = 'flex';
+}
+
+// Закрыть модальное окно свойств объекта
+function closeObjectPropertiesModal() {
+  document.getElementById('objectPropertiesModal').style.display = 'none';
+  currentEditingObject = null;
+  currentEditingObjectType = null;
+}
+
+// Применить свойства объекта
+function applyObjectProperties() {
+  if (!currentEditingObject) return;
+
+  try {
+    saveToUndoStack();
+
+    const newProperties = {
+      name: document.getElementById('objPropertyName').value.trim(),
+      type: document.getElementById('objPropertyType').value,
+      notes: document.getElementById('objPropertyNotes').value.trim() || null
+    };
+
+    // Парсим пользовательские данные
+    const customDataText = document.getElementById('objPropertyCustomData').value.trim();
+    if (customDataText) {
+      try {
+        newProperties.customData = JSON.parse(customDataText);
+      } catch (e) {
+        showNotification('Ошибка в JSON: ' + e.message, 'error');
+        return;
+      }
+    }
+
+    // Сохраняем существующие свойства
+    const oldProps = currentEditingObject.properties || {};
+    if (oldProps.imageId) newProperties.imageId = oldProps.imageId;
+    if (oldProps.imagePath) newProperties.imagePath = oldProps.imagePath;
+    if (oldProps.L !== undefined) newProperties.L = oldProps.L;
+    if (oldProps.I !== undefined) newProperties.I = oldProps.I;
+    if (oldProps.K !== undefined) newProperties.K = oldProps.K;
+    if (oldProps.W !== undefined) newProperties.W = oldProps.W;
+    if (oldProps.length !== undefined) newProperties.length = oldProps.length;
+
+    // Применяем геометрические свойства
+    const updates = {
+      properties: newProperties,
+      left: parseInt(document.getElementById('objPropertyX').value) || currentEditingObject.left,
+      top: parseInt(document.getElementById('objPropertyY').value) || currentEditingObject.top,
+      angle: parseInt(document.getElementById('objPropertyRotation').value) || 0,
+      opacity: (parseInt(document.getElementById('objPropertyOpacity').value) || 100) / 100
+    };
+
+    // Для изображений применяем масштабирование
+    if (currentEditingObject.type === 'image') {
+      const newWidth = parseInt(document.getElementById('objPropertyWidth').value);
+      const newHeight = parseInt(document.getElementById('objPropertyHeight').value);
+
+      if (newWidth && newHeight) {
+        const originalWidth = currentEditingObject._element?.naturalWidth || currentEditingObject.width;
+        const originalHeight = currentEditingObject._element?.naturalHeight || currentEditingObject.height;
+
+        updates.scaleX = newWidth / originalWidth;
+        updates.scaleY = newHeight / originalHeight;
+      }
+    }
+
+    currentEditingObject.set(updates);
+    canvas.renderAll();
+
+    updatePropertiesPanel();
+    closeObjectPropertiesModal();
+    showNotification('Свойства объекта обновлены', 'success');
+
+  } catch (error) {
+    showNotification('Ошибка при сохранении: ' + error.message, 'error');
+  }
+}
+
+// Удалить текущий объект
+function deleteCurrentObject() {
+  if (!currentEditingObject || !confirm('Удалить этот объект?')) return;
+
+  saveToUndoStack();
+  canvas.remove(currentEditingObject);
+  canvas.renderAll();
+
+  closeObjectPropertiesModal();
+  updatePropertiesPanel();
+  updateStatus();
+  showNotification('Объект удален', 'info');
+}
+
+// Обновить панель свойств с кнопкой редактирования
+// function updatePropertiesPanel() {
+//   const activeObj = canvas.getActiveObject();
+//   const propsContent = document.getElementById('props-content');
+
+//   if (!activeObj) {
+//     propsContent.innerHTML = `
+//       <p style="color: #7f8c8d; font-style: italic; text-align: center; padding: 20px;">
+//         Выберите объект на чертеже
+//       </p>
+//     `;
+//     return;
+//   }
+
+//   let content = `
+//     <div class="property-group">
+//       <h4>📄 Основные свойства</h4>
+//       <div class="property-row">
+//         <div class="property-label">Тип:</div>
+//         <div class="property-value"><strong>${activeObj.type}</strong></div>
+//       </div>
+//   `;
+
+//   if (activeObj.type === 'line') {
+//     const length = Math.sqrt(
+//       Math.pow(activeObj.x2 - activeObj.x1, 2) +
+//       Math.pow(activeObj.y2 - activeObj.y1, 2)
+//     );
+//     content += `
+//       <div class="property-row">
+//         <div class="property-label">Длина:</div>
+//         <div class="property-value">${Math.round(length)}px</div>
+//       </div>
+//     `;
+
+//     if (activeObj.properties) {
+//       content += `
+//         <div class="property-group">
+//           <h4>📊 Технические параметры</h4>
+//           <div class="property-row">
+//             <div class="property-label">Название:</div>
+//             <div class="property-value">${activeObj.properties.name || 'Без названия'}</div>
+//           </div>
+//           <div class="property-row">
+//             <div class="property-label">L (м²):</div>
+//             <div class="property-value">${(activeObj.properties.L || 0).toFixed(4)}</div>
+//           </div>
+//           <div class="property-row">
+//             <div class="property-label">I:</div>
+//             <div class="property-value">${(activeObj.properties.I || 0).toFixed(6)}</div>
+//           </div>
+//           <div class="property-row">
+//             <div class="property-label">K (м):</div>
+//             <div class="property-value">${(activeObj.properties.K || 0).toFixed(3)}</div>
+//           </div>
+//           <div class="property-row">
+//             <div class="property-label">W (кг/м):</div>
+//             <div class="property-value">${(activeObj.properties.W || 0).toFixed(2)}</div>
+//           </div>
+//         </div>
+//       `;
+//     }
+
+//     content += `
+//       <div style="margin-top: 15px; text-align: center;">
+//         <button onclick="showLinePropertiesModal()" style="padding: 8px 16px; font-size: 13px; margin-right: 5px;">
+//           ⚙️ Редактировать параметры линии
+//         </button>
+//         <button onclick="showObjectPropertiesModal()" style="padding: 8px 16px; font-size: 13px;">
+//           📝 Редактировать общие свойства
+//         </button>
+//       </div>
+//     `;
+//   } else if (activeObj.type === 'image') {
+//     const props = activeObj.properties || {};
+//     content += `
+//       <div class="property-row">
+//         <div class="property-label">Название:</div>
+//         <div class="property-value">${props.name || 'Изображение'}</div>
+//       </div>
+//       <div class="property-row">
+//         <div class="property-label">Тип:</div>
+//         <div class="property-value">${props.type || 'default'}</div>
+//       </div>
+//       <div class="property-row">
+//         <div class="property-label">Позиция:</div>
+//         <div class="property-value">${Math.round(activeObj.left)} × ${Math.round(activeObj.top)}</div>
+//       </div>
+//       <div class="property-row">
+//         <div class="property-label">Размер:</div>
+//         <div class="property-value">${Math.round(activeObj.width * activeObj.scaleX)} × ${Math.round(activeObj.height * activeObj.scaleY)} px</div>
+//       </div>
+//     `;
+
+//     if (props.notes) {
+//       content += `
+//         <div class="property-row">
+//           <div class="property-label">Примечания:</div>
+//           <div class="property-value">${props.notes}</div>
+//         </div>
+//       `;
+//     }
+
+//     content += `
+//       <div style="margin-top: 15px; text-align: center;">
+//         <button onclick="showObjectPropertiesModal()" style="padding: 8px 16px; font-size: 13px;">
+//           ⚙️ Редактировать свойства
+//         </button>
+//       </div>
+//     `;
+//   } else {
+//     // Для других типов объектов
+//     const props = activeObj.properties || {};
+//     content += `
+//       <div class="property-row">
+//         <div class="property-label">Название:</div>
+//         <div class="property-value">${props.name || activeObj.type}</div>
+//       </div>
+//       <div class="property-row">
+//         <div class="property-label">Позиция:</div>
+//         <div class="property-value">${Math.round(activeObj.left)} × ${Math.round(activeObj.top)}</div>
+//       </div>
+//     `;
+
+//     content += `
+//       <div style="margin-top: 15px; text-align: center;">
+//         <button onclick="showObjectPropertiesModal()" style="padding: 8px 16px; font-size: 13px;">
+//           ⚙️ Редактировать свойства
+//         </button>
+//       </div>
+//     `;
+//   }
+
+//   content += `</div>`;
+//   propsContent.innerHTML = content;
+// }
+
+// ==================== ОБНОВЛЕНИЕ ПАНЕЛИ СВОЙСТВ ====================
+function updatePropertiesPanel() {
+  const activeObj = canvas.getActiveObject();
+  const propsContent = document.getElementById('props-content');
+
+  if (!activeObj) {
+    propsContent.innerHTML = `
+      <p style="color: #7f8c8d; font-style: italic; text-align: center; padding: 20px;">
+        Выберите объект на чертеже
+      </p>
+    `;
+    return;
+  }
+
+  let content = `
+    <div class="property-group">
+      <h4>📄 Основные свойства</h4>
+      <div class="property-row">
+        <div class="property-label">Тип:</div>
+        <div class="property-value"><strong>${activeObj.type}</strong></div>
+      </div>
+  `;
+
+  if (activeObj.type === 'line') {
+    const length = Math.sqrt(
+      Math.pow(activeObj.x2 - activeObj.x1, 2) +
+      Math.pow(activeObj.y2 - activeObj.y1, 2)
+    );
+    content += `
+      <div class="property-row">
+        <div class="property-label">Длина:</div>
+        <div class="property-value">${Math.round(length)}px</div>
+      </div>
+    `;
+
+    if (activeObj.properties) {
+      content += `
+        <div class="property-group">
+          <h4>📊 Технические параметры</h4>
+          <div class="property-row">
+            <div class="property-label">Название:</div>
+            <div class="property-value">${activeObj.properties.name || 'Без названия'}</div>
+          </div>
+          <div class="property-row">
+            <div class="property-label">L (м²):</div>
+            <div class="property-value">${(activeObj.properties.L || 0).toFixed(4)}</div>
+          </div>
+          <div class="property-row">
+            <div class="property-label">I:</div>
+            <div class="property-value">${(activeObj.properties.I || 0).toFixed(6)}</div>
+          </div>
+          <div class="property-row">
+            <div class="property-label">K (м):</div>
+            <div class="property-value">${(activeObj.properties.K || 0).toFixed(3)}</div>
+          </div>
+          <div class="property-row">
+            <div class="property-label">W (кг/м):</div>
+            <div class="property-value">${(activeObj.properties.W || 0).toFixed(2)}</div>
+          </div>
+        </div>
+      `;
+    }
+
+    content += `
+      <div style="margin-top: 15px; text-align: center;">
+        <button onclick="showLinePropertiesModal()" style="padding: 8px 16px; font-size: 13px; margin-right: 5px;">
+          ⚙️ Редактировать параметры линии
+        </button>
+        <button onclick="showObjectPropertiesModal()" style="padding: 8px 16px; font-size: 13px;">
+          📝 Редактировать общие свойства
+        </button>
+      </div>
+    `;
+  } else if (activeObj.type === 'image') {
+    const props = activeObj.properties || {};
+    content += `
+      <div class="property-row">
+        <div class="property-label">Название:</div>
+        <div class="property-value">${props.name || 'Изображение'}</div>
+      </div>
+      <div class="property-row">
+        <div class="property-label">Тип:</div>
+        <div class="property-value">${props.type || 'default'}</div>
+      </div>
+      <div class="property-row">
+        <div class="property-label">Позиция:</div>
+        <div class="property-value">${Math.round(activeObj.left)} × ${Math.round(activeObj.top)}</div>
+      </div>
+      <div class="property-row">
+        <div class="property-label">Размер:</div>
+        <div class="property-value">${Math.round(activeObj.width * activeObj.scaleX)} × ${Math.round(activeObj.height * activeObj.scaleY)} px</div>
+      </div>
+    `;
+
+    if (props.notes) {
+      content += `
+        <div class="property-row">
+          <div class="property-label">Примечания:</div>
+          <div class="property-value">${props.notes}</div>
+        </div>
+      `;
+    }
+
+    content += `
+      <div style="margin-top: 15px; text-align: center;">
+        <button onclick="showObjectPropertiesModal()" style="padding: 8px 16px; font-size: 13px;">
+          ⚙️ Редактировать свойства
+        </button>
+      </div>
+    `;
+  } else if (activeObj.type === 'rect' || activeObj.type === 'circle' || activeObj.type === 'triangle') {
+    const props = activeObj.properties || {};
+    content += `
+      <div class="property-row">
+        <div class="property-label">Название:</div>
+        <div class="property-value">${props.name || activeObj.type}</div>
+      </div>
+      <div class="property-row">
+        <div class="property-label">Позиция:</div>
+        <div class="property-value">${Math.round(activeObj.left)} × ${Math.round(activeObj.top)}</div>
+      </div>
+      <div class="property-row">
+        <div class="property-label">Размер:</div>
+        <div class="property-value">${Math.round(activeObj.width * (activeObj.scaleX || 1))} × ${Math.round(activeObj.height * (activeObj.scaleY || 1))} px</div>
+      </div>
+    `;
+
+    content += `
+      <div style="margin-top: 15px; text-align: center;">
+        <button onclick="showObjectPropertiesModal()" style="padding: 8px 16px; font-size: 13px;">
+          ⚙️ Редактировать свойства
+        </button>
+      </div>
+    `;
+  } else {
+    // Для других типов объектов
+    const props = activeObj.properties || {};
+    content += `
+      <div class="property-row">
+        <div class="property-label">Название:</div>
+        <div class="property-value">${props.name || activeObj.type || 'Объект'}</div>
+      </div>
+      <div class="property-row">
+        <div class="property-label">Позиция:</div>
+        <div class="property-value">${Math.round(activeObj.left || 0)} × ${Math.round(activeObj.top || 0)}</div>
+      </div>
+    `;
+
+    content += `
+      <div style="margin-top: 15px; text-align: center;">
+        <button onclick="showObjectPropertiesModal()" style="padding: 8px 16px; font-size: 13px;">
+          ⚙️ Редактировать свойства
+        </button>
+      </div>
+    `;
+  }
+
+  content += `</div>`;
+  propsContent.innerHTML = content;
+}
+
+// Добавить свойство Notes ко всем объектам при сохранении
+function saveDrawing() {
+  // Сохраняем notes для всех объектов
+  canvas.getObjects().forEach(obj => {
+    if (obj.type !== 'image' && obj.properties && !obj.properties.notes) {
+      obj.properties.notes = '';
+    }
+  });
+
+  const json = JSON.stringify(canvas.toJSON(['id', 'properties', 'pointIndex', 'pointData']));
+  localStorage.setItem('fabricDrawing', json);
+
+  const blob = new Blob([json], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `чертеж-${new Date().toISOString().slice(0, 10)}.json`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+
+  const count = canvas.getObjects().filter(obj => obj.id !== 'grid-group' && obj.id !== 'grid-line').length;
+  showNotification(`Чертеж сохранен! (${count} объектов)`, 'success');
+}
+
 // ==================== ИНИЦИАЛИЗАЦИЯ МОДАЛЬНЫХ ОКОН ====================
 function initializeModals() {
   document.getElementById('linePropertiesForm')?.addEventListener('submit', function (e) {
@@ -562,6 +1089,15 @@ function initializeModals() {
   document.getElementById('addImageForm')?.addEventListener('submit', function (e) {
     e.preventDefault();
     addNewImage();
+  });
+
+  document.getElementById('objectPropertiesForm')?.addEventListener('submit', function (e) {
+    e.preventDefault();
+    applyObjectProperties();
+  });
+
+  document.getElementById('objPropertyOpacity')?.addEventListener('input', function (e) {
+    document.getElementById('opacityValue').textContent = e.target.value + '%';
   });
 }
 
@@ -876,31 +1412,31 @@ function getLineRectIntersections(line, rect) {
   const intersections = [];
   const segments = [
     { // верхняя сторона
-      p1: {x: rect.left, y: rect.top},
-      p2: {x: rect.right, y: rect.top}
+      p1: { x: rect.left, y: rect.top },
+      p2: { x: rect.right, y: rect.top }
     },
     { // правая сторона
-      p1: {x: rect.right, y: rect.top},
-      p2: {x: rect.right, y: rect.bottom}
+      p1: { x: rect.right, y: rect.top },
+      p2: { x: rect.right, y: rect.bottom }
     },
     { // нижняя сторона
-      p1: {x: rect.right, y: rect.bottom},
-      p2: {x: rect.left, y: rect.bottom}
+      p1: { x: rect.right, y: rect.bottom },
+      p2: { x: rect.left, y: rect.bottom }
     },
     { // левая сторона
-      p1: {x: rect.left, y: rect.bottom},
-      p2: {x: rect.left, y: rect.top}
+      p1: { x: rect.left, y: rect.bottom },
+      p2: { x: rect.left, y: rect.top }
     }
   ];
 
   segments.forEach(segment => {
     const inter = lineSegmentIntersection(
-      {x1: line.x1, y1: line.y1, x2: line.x2, y2: line.y2},
+      { x1: line.x1, y1: line.y1, x2: line.x2, y2: line.y2 },
       segment
     );
     if (inter) {
       intersections.push({
-        point: {x: inter.x, y: inter.y},
+        point: { x: inter.x, y: inter.y },
         segment: segment
       });
     }
@@ -938,7 +1474,7 @@ function lineSegmentIntersection(line1, segment) {
   if (ua >= 0 && ua <= 1 && ub >= 0 && ub <= 1) {
     const x = x1 + ua * (x2 - x1);
     const y = y1 + ua * (y2 - y1);
-    return {x: x, y: y};
+    return { x: x, y: y };
   }
 
   return null;
@@ -993,7 +1529,7 @@ function createIntersectionPoint(x, y, index, intersectionData) {
   circle.bringToFront();
   text.bringToFront();
 
-  intersectionVisuals.push({circle, text});
+  intersectionVisuals.push({ circle, text });
 
   return circle;
 }
@@ -1104,7 +1640,7 @@ function splitLineAtPoint(line, point) {
     hasControls: true,
     hasBorders: true,
     lockRotation: false,
-    properties: {...line.properties}
+    properties: { ...line.properties }
   });
 
   // Создаем вторую часть линии
@@ -1120,14 +1656,14 @@ function splitLineAtPoint(line, point) {
     hasControls: true,
     hasBorders: true,
     lockRotation: false,
-    properties: {...line.properties}
+    properties: { ...line.properties }
   });
 
   // Обновляем длину в свойствах
   if (line1.properties) line1.properties.length = distance1;
   if (line2.properties) line2.properties.length = distance2;
 
-  return {line1, line2};
+  return { line1, line2 };
 }
 
 // Разделение линий по изображению
@@ -1152,7 +1688,7 @@ function splitLinesAtImagePosition(image) {
 
       // Разделяем линию на сегменты
       const segments = [];
-      let currentStart = {x: line.x1, y: line.y1};
+      let currentStart = { x: line.x1, y: line.y1 };
 
       intersections.forEach((inter, index) => {
         if (index === 0) {
@@ -1165,7 +1701,7 @@ function splitLinesAtImagePosition(image) {
           // Сегмент после последнего пересечения
           segments.push({
             start: inter.point,
-            end: {x: line.x2, y: line.y2}
+            end: { x: line.x2, y: line.y2 }
           });
         }
       });
@@ -1194,7 +1730,7 @@ function splitLinesAtImagePosition(image) {
               hasControls: true,
               hasBorders: true,
               lockRotation: false,
-              properties: {...line.properties}
+              properties: { ...line.properties }
             });
 
             if (newLine.properties) {
@@ -1314,6 +1850,288 @@ function splitLinesAtImagePosition(image) {
 //   document.getElementById('intersectionPointModal').style.display = 'flex';
 // }
 
+// function showIntersectionPointInfo(pointIndex) {
+//   const pointData = intersectionPoints[pointIndex];
+//   if (!pointData) return;
+
+//   const allLines = canvas.getObjects().filter(obj =>
+//     obj.type === 'line' && obj.id !== 'grid-line'
+//   );
+
+//   const allObjects = canvas.getObjects().filter(obj =>
+//     obj.type === 'image'
+//   );
+
+//   const linesStartingHere = [];
+//   const linesEndingHere = [];
+//   const objectsAtPoint = [];
+//   const threshold = 5;
+
+//   // Находим линии, начинающиеся/заканчивающиеся в точке
+//   allLines.forEach(line => {
+//     const startDist = Math.sqrt(Math.pow(line.x1 - pointData.x, 2) + Math.pow(line.y1 - pointData.y, 2));
+//     const endDist = Math.sqrt(Math.pow(line.x2 - pointData.x, 2) + Math.pow(line.y2 - pointData.y, 2));
+
+//     if (startDist < threshold) {
+//       linesStartingHere.push({
+//         line: line,
+//         type: 'start',
+//         distance: startDist
+//       });
+//     } else if (endDist < threshold) {
+//       linesEndingHere.push({
+//         line: line,
+//         type: 'end',
+//         distance: endDist
+//       });
+//     }
+//   });
+
+//   // Находим объекты в точке
+//   allObjects.forEach(obj => {
+//     const objRect = getObjectRect(obj);
+//     if (pointData.x >= objRect.left && pointData.x <= objRect.right &&
+//       pointData.y >= objRect.top && pointData.y <= objRect.bottom) {
+//       objectsAtPoint.push(obj);
+//     }
+//   });
+
+//   let html = `
+//     <div class="property-group">
+//       <h4>📌 Точка разделения #${pointIndex + 1}</h4>
+//       <div class="property-row">
+//         <div class="property-label">Координаты:</div>
+//         <div class="property-value">X: ${pointData.x.toFixed(1)}, Y: ${pointData.y.toFixed(1)}</div>
+//       </div>
+//       <div class="property-row">
+//         <div class="property-label">Линий начинается:</div>
+//         <div class="property-value">${linesStartingHere.length}</div>
+//       </div>
+//       <div class="property-row">
+//         <div class="property-label">Линий заканчивается:</div>
+//         <div class="property-value">${linesEndingHere.length}</div>
+//       </div>
+//       <div class="property-row">
+//         <div class="property-label">Объектов в точке:</div>
+//         <div class="property-value">${objectsAtPoint.length}</div>
+//       </div>
+//     </div>
+//   `;
+
+//   // Отображаем объекты в точке
+//   if (objectsAtPoint.length > 0) {
+//     html += `
+//       <div class="property-group">
+//         <h4>🖼️ Объекты в точке:</h4>
+//     `;
+
+//     objectsAtPoint.forEach((obj, index) => {
+//       const props = obj.properties || {};
+//       html += `
+//         <div class="property-group" style="margin-top: 10px; border-left: 3px solid #4A00E0; padding-left: 10px;">
+//           <h5 style="margin: 5px 0;">${props.name || `Объект ${index + 1}`}</h5>
+//           <div class="property-row">
+//             <div class="property-label">Тип:</div>
+//             <div class="property-value">${props.type || 'Не указан'}</div>
+//           </div>
+//           <div class="property-row">
+//             <div class="property-label">ID:</div>
+//             <div class="property-value">${props.imageId || 'Не указан'}</div>
+//           </div>
+//           <div class="property-row">
+//             <div class="property-label">Размер:</div>
+//             <div class="property-value">${Math.round(obj.width * obj.scaleX)} × ${Math.round(obj.height * obj.scaleY)} px</div>
+//           </div>
+//           <div class="property-row">
+//             <div class="property-label">Позиция:</div>
+//             <div class="property-value">${Math.round(obj.left)} × ${Math.round(obj.top)} px</div>
+//           </div>
+//           ${props.notes ? `
+//           <div class="property-row">
+//             <div class="property-label">Примечания:</div>
+//             <div class="property-value">${props.notes}</div>
+//           </div>
+//           ` : ''}
+//         </div>
+//       `;
+//     });
+
+//     html += `</div>`;
+//   }
+
+//   // Отображаем линии, начинающиеся в точке
+//   if (linesStartingHere.length > 0) {
+//     html += `
+//       <div class="property-group">
+//         <h4>🟢 Линии, начинающиеся в точке:</h4>
+//     `;
+
+//     linesStartingHere.forEach((lineInfo, index) => {
+//       const line = lineInfo.line;
+//       const props = line.properties || {};
+//       const length = Math.sqrt(Math.pow(line.x2 - line.x1, 2) + Math.pow(line.y2 - line.y1, 2));
+
+//       html += `
+//         <div class="property-group" style="margin-top: 10px; border-left: 3px solid #00b894; padding-left: 10px;">
+//           <h5 style="margin: 5px 0;">${props.name || `Линия ${index + 1}`} (начало)</h5>
+//           <div class="property-row">
+//             <div class="property-label">ID линии:</div>
+//             <div class="property-value">${line.id || 'Не указан'}</div>
+//           </div>
+//           <div class="property-row">
+//             <div class="property-label">Длина:</div>
+//             <div class="property-value">${length.toFixed(1)} px</div>
+//           </div>
+//           <div class="property-row">
+//             <div class="property-label">Координаты:</div>
+//             <div class="property-value">(${line.x1.toFixed(1)}, ${line.y1.toFixed(1)}) → (${line.x2.toFixed(1)}, ${line.y2.toFixed(1)})</div>
+//           </div>
+//           <div class="property-row">
+//             <div class="property-label">Цвет:</div>
+//             <div class="property-value">
+//               <span style="display: inline-block; width: 12px; height: 12px; background-color: ${line.stroke}; border: 1px solid #ccc;"></span>
+//               ${line.stroke}
+//             </div>
+//           </div>
+//           <div class="property-row">
+//             <div class="property-label">Толщина:</div>
+//             <div class="property-value">${line.strokeWidth} px</div>
+//           </div>
+//           <div class="property-row">
+//             <div class="property-label">L (м²):</div>
+//             <div class="property-value">${(props.L || 0).toFixed(4)}</div>
+//           </div>
+//           <div class="property-row">
+//             <div class="property-label">I:</div>
+//             <div class="property-value">${(props.I || 0).toFixed(6)}</div>
+//           </div>
+//           <div class="property-row">
+//             <div class="property-label">K (м):</div>
+//             <div class="property-value">${(props.K || 0).toFixed(3)}</div>
+//           </div>
+//           <div class="property-row">
+//             <div class="property-label">W (кг/м):</div>
+//             <div class="property-value">${(props.W || 0).toFixed(2)}</div>
+//           </div>
+//           ${props.notes ? `
+//           <div class="property-row">
+//             <div class="property-label">Примечания:</div>
+//             <div class="property-value">${props.notes}</div>
+//           </div>
+//           ` : ''}
+//         </div>
+//       `;
+//     });
+
+//     html += `</div>`;
+//   }
+
+//   // Отображаем линии, заканчивающиеся в точке
+//   if (linesEndingHere.length > 0) {
+//     html += `
+//       <div class="property-group">
+//         <h4>🔴 Линии, заканчивающиеся в точке:</h4>
+//     `;
+
+//     linesEndingHere.forEach((lineInfo, index) => {
+//       const line = lineInfo.line;
+//       const props = line.properties || {};
+//       const length = Math.sqrt(Math.pow(line.x2 - line.x1, 2) + Math.pow(line.y2 - line.y1, 2));
+
+//       html += `
+//         <div class="property-group" style="margin-top: 10px; border-left: 3px solid #e17055; padding-left: 10px;">
+//           <h5 style="margin: 5px 0;">${props.name || `Линия ${index + 1}`} (конец)</h5>
+//           <div class="property-row">
+//             <div class="property-label">ID линии:</div>
+//             <div class="property-value">${line.id || 'Не указан'}</div>
+//           </div>
+//           <div class="property-row">
+//             <div class="property-label">Длина:</div>
+//             <div class="property-value">${length.toFixed(1)} px</div>
+//           </div>
+//           <div class="property-row">
+//             <div class="property-label">Координаты:</div>
+//             <div class="property-value">(${line.x1.toFixed(1)}, ${line.y1.toFixed(1)}) → (${line.x2.toFixed(1)}, ${line.y2.toFixed(1)})</div>
+//           </div>
+//           <div class="property-row">
+//             <div class="property-label">Цвет:</div>
+//             <div class="property-value">
+//               <span style="display: inline-block; width: 12px; height: 12px; background-color: ${line.stroke}; border: 1px solid #ccc;"></span>
+//               ${line.stroke}
+//             </div>
+//           </div>
+//           <div class="property-row">
+//             <div class="property-label">Толщина:</div>
+//             <div class="property-value">${line.strokeWidth} px</div>
+//           </div>
+//           <div class="property-row">
+//             <div class="property-label">L (м²):</div>
+//             <div class="property-value">${(props.L || 0).toFixed(4)}</div>
+//           </div>
+//           <div class="property-row">
+//             <div class="property-label">I:</div>
+//             <div class="property-value">${(props.I || 0).toFixed(6)}</div>
+//           </div>
+//           <div class="property-row">
+//             <div class="property-label">K (м):</div>
+//             <div class="property-value">${(props.K || 0).toFixed(3)}</div>
+//           </div>
+//           <div class="property-row">
+//             <div class="property-label">W (кг/м):</div>
+//             <div class="property-value">${(props.W || 0).toFixed(2)}</div>
+//           </div>
+//           ${props.notes ? `
+//           <div class="property-row">
+//             <div class="property-label">Примечания:</div>
+//             <div class="property-value">${props.notes}</div>
+//           </div>
+//           ` : ''}
+//         </div>
+//       `;
+//     });
+
+//     html += `</div>`;
+//   }
+
+//   // Информация о самом пересечении
+//   if (pointData.line1 && pointData.line2) {
+//     html += `
+//       <div class="property-group">
+//         <h4>📐 Информация о пересечении:</h4>
+//         <div class="property-row">
+//           <div class="property-label">Тип:</div>
+//           <div class="property-value">Пересечение двух линий</div>
+//         </div>
+//         ${pointData.ua !== undefined ? `
+//         <div class="property-row">
+//           <div class="property-label">Положение на линии 1:</div>
+//           <div class="property-value">${(pointData.ua * 100).toFixed(1)}% от начала</div>
+//         </div>
+//         ` : ''}
+//         ${pointData.ub !== undefined ? `
+//         <div class="property-row">
+//           <div class="property-label">Положение на линии 2:</div>
+//           <div class="property-value">${(pointData.ub * 100).toFixed(1)}% от начала</div>
+//         </div>
+//         ` : ''}
+//       </div>
+//     `;
+//   } else if (pointData.line1 && pointData.object) {
+//     html += `
+//       <div class="property-group">
+//         <h4>📐 Информация о пересечении:</h4>
+//         <div class="property-row">
+//           <div class="property-label">Тип:</div>
+//           <div class="property-value">Пересечение линии с объектом</div>
+//         </div>
+//       </div>
+//     `;
+//   }
+
+//   document.getElementById('intersectionPointInfo').innerHTML = html;
+//   document.getElementById('intersectionPointModal').style.display = 'flex';
+// }
+
 function showIntersectionPointInfo(pointIndex) {
   const pointData = intersectionPoints[pointIndex];
   if (!pointData) return;
@@ -1323,7 +2141,7 @@ function showIntersectionPointInfo(pointIndex) {
   );
 
   const allObjects = canvas.getObjects().filter(obj =>
-    obj.type === 'image'
+    obj.type === 'image' || obj.type === 'rect' || obj.type === 'circle' || obj.type === 'triangle'
   );
 
   const linesStartingHere = [];
@@ -1368,194 +2186,24 @@ function showIntersectionPointInfo(pointIndex) {
         <div class="property-value">X: ${pointData.x.toFixed(1)}, Y: ${pointData.y.toFixed(1)}</div>
       </div>
       <div class="property-row">
-        <div class="property-label">Линий начинается:</div>
-        <div class="property-value">${linesStartingHere.length}</div>
+        <div class="property-label">Статистика:</div>
+        <div class="property-value">
+          🟢 ${linesStartingHere.length} начала | 🔴 ${linesEndingHere.length} окончаний | 🖼️ ${objectsAtPoint.length} объектов
+        </div>
       </div>
-      <div class="property-row">
-        <div class="property-label">Линий заканчивается:</div>
-        <div class="property-value">${linesEndingHere.length}</div>
-      </div>
-      <div class="property-row">
-        <div class="property-label">Объектов в точке:</div>
-        <div class="property-value">${objectsAtPoint.length}</div>
+      <div style="margin-top: 15px; text-align: center;">
+        <button onclick="zoomToPoint(${pointData.x}, ${pointData.y})" style="padding: 6px 12px; font-size: 12px; margin: 2px;">
+          🔍 Приблизить к точке
+        </button>
+        <button onclick="selectAllAtPoint(${pointIndex})" style="padding: 6px 12px; font-size: 12px; margin: 2px;">
+          🎯 Выбрать все в точке
+        </button>
+        <button onclick="addNoteToPoint(${pointIndex})" style="padding: 6px 12px; font-size: 12px; margin: 2px;">
+          📝 Добавить заметку
+        </button>
       </div>
     </div>
   `;
-
-  // Отображаем объекты в точке
-  if (objectsAtPoint.length > 0) {
-    html += `
-      <div class="property-group">
-        <h4>🖼️ Объекты в точке:</h4>
-    `;
-
-    objectsAtPoint.forEach((obj, index) => {
-      const props = obj.properties || {};
-      html += `
-        <div class="property-group" style="margin-top: 10px; border-left: 3px solid #4A00E0; padding-left: 10px;">
-          <h5 style="margin: 5px 0;">${props.name || `Объект ${index + 1}`}</h5>
-          <div class="property-row">
-            <div class="property-label">Тип:</div>
-            <div class="property-value">${props.type || 'Не указан'}</div>
-          </div>
-          <div class="property-row">
-            <div class="property-label">ID:</div>
-            <div class="property-value">${props.imageId || 'Не указан'}</div>
-          </div>
-          <div class="property-row">
-            <div class="property-label">Размер:</div>
-            <div class="property-value">${Math.round(obj.width * obj.scaleX)} × ${Math.round(obj.height * obj.scaleY)} px</div>
-          </div>
-          <div class="property-row">
-            <div class="property-label">Позиция:</div>
-            <div class="property-value">${Math.round(obj.left)} × ${Math.round(obj.top)} px</div>
-          </div>
-          ${props.notes ? `
-          <div class="property-row">
-            <div class="property-label">Примечания:</div>
-            <div class="property-value">${props.notes}</div>
-          </div>
-          ` : ''}
-        </div>
-      `;
-    });
-
-    html += `</div>`;
-  }
-
-  // Отображаем линии, начинающиеся в точке
-  if (linesStartingHere.length > 0) {
-    html += `
-      <div class="property-group">
-        <h4>🟢 Линии, начинающиеся в точке:</h4>
-    `;
-
-    linesStartingHere.forEach((lineInfo, index) => {
-      const line = lineInfo.line;
-      const props = line.properties || {};
-      const length = Math.sqrt(Math.pow(line.x2 - line.x1, 2) + Math.pow(line.y2 - line.y1, 2));
-
-      html += `
-        <div class="property-group" style="margin-top: 10px; border-left: 3px solid #00b894; padding-left: 10px;">
-          <h5 style="margin: 5px 0;">${props.name || `Линия ${index + 1}`} (начало)</h5>
-          <div class="property-row">
-            <div class="property-label">ID линии:</div>
-            <div class="property-value">${line.id || 'Не указан'}</div>
-          </div>
-          <div class="property-row">
-            <div class="property-label">Длина:</div>
-            <div class="property-value">${length.toFixed(1)} px</div>
-          </div>
-          <div class="property-row">
-            <div class="property-label">Координаты:</div>
-            <div class="property-value">(${line.x1.toFixed(1)}, ${line.y1.toFixed(1)}) → (${line.x2.toFixed(1)}, ${line.y2.toFixed(1)})</div>
-          </div>
-          <div class="property-row">
-            <div class="property-label">Цвет:</div>
-            <div class="property-value">
-              <span style="display: inline-block; width: 12px; height: 12px; background-color: ${line.stroke}; border: 1px solid #ccc;"></span>
-              ${line.stroke}
-            </div>
-          </div>
-          <div class="property-row">
-            <div class="property-label">Толщина:</div>
-            <div class="property-value">${line.strokeWidth} px</div>
-          </div>
-          <div class="property-row">
-            <div class="property-label">L (м²):</div>
-            <div class="property-value">${(props.L || 0).toFixed(4)}</div>
-          </div>
-          <div class="property-row">
-            <div class="property-label">I:</div>
-            <div class="property-value">${(props.I || 0).toFixed(6)}</div>
-          </div>
-          <div class="property-row">
-            <div class="property-label">K (м):</div>
-            <div class="property-value">${(props.K || 0).toFixed(3)}</div>
-          </div>
-          <div class="property-row">
-            <div class="property-label">W (кг/м):</div>
-            <div class="property-value">${(props.W || 0).toFixed(2)}</div>
-          </div>
-          ${props.notes ? `
-          <div class="property-row">
-            <div class="property-label">Примечания:</div>
-            <div class="property-value">${props.notes}</div>
-          </div>
-          ` : ''}
-        </div>
-      `;
-    });
-
-    html += `</div>`;
-  }
-
-  // Отображаем линии, заканчивающиеся в точке
-  if (linesEndingHere.length > 0) {
-    html += `
-      <div class="property-group">
-        <h4>🔴 Линии, заканчивающиеся в точке:</h4>
-    `;
-
-    linesEndingHere.forEach((lineInfo, index) => {
-      const line = lineInfo.line;
-      const props = line.properties || {};
-      const length = Math.sqrt(Math.pow(line.x2 - line.x1, 2) + Math.pow(line.y2 - line.y1, 2));
-
-      html += `
-        <div class="property-group" style="margin-top: 10px; border-left: 3px solid #e17055; padding-left: 10px;">
-          <h5 style="margin: 5px 0;">${props.name || `Линия ${index + 1}`} (конец)</h5>
-          <div class="property-row">
-            <div class="property-label">ID линии:</div>
-            <div class="property-value">${line.id || 'Не указан'}</div>
-          </div>
-          <div class="property-row">
-            <div class="property-label">Длина:</div>
-            <div class="property-value">${length.toFixed(1)} px</div>
-          </div>
-          <div class="property-row">
-            <div class="property-label">Координаты:</div>
-            <div class="property-value">(${line.x1.toFixed(1)}, ${line.y1.toFixed(1)}) → (${line.x2.toFixed(1)}, ${line.y2.toFixed(1)})</div>
-          </div>
-          <div class="property-row">
-            <div class="property-label">Цвет:</div>
-            <div class="property-value">
-              <span style="display: inline-block; width: 12px; height: 12px; background-color: ${line.stroke}; border: 1px solid #ccc;"></span>
-              ${line.stroke}
-            </div>
-          </div>
-          <div class="property-row">
-            <div class="property-label">Толщина:</div>
-            <div class="property-value">${line.strokeWidth} px</div>
-          </div>
-          <div class="property-row">
-            <div class="property-label">L (м²):</div>
-            <div class="property-value">${(props.L || 0).toFixed(4)}</div>
-          </div>
-          <div class="property-row">
-            <div class="property-label">I:</div>
-            <div class="property-value">${(props.I || 0).toFixed(6)}</div>
-          </div>
-          <div class="property-row">
-            <div class="property-label">K (м):</div>
-            <div class="property-value">${(props.K || 0).toFixed(3)}</div>
-          </div>
-          <div class="property-row">
-            <div class="property-label">W (кг/м):</div>
-            <div class="property-value">${(props.W || 0).toFixed(2)}</div>
-          </div>
-          ${props.notes ? `
-          <div class="property-row">
-            <div class="property-label">Примечания:</div>
-            <div class="property-value">${props.notes}</div>
-          </div>
-          ` : ''}
-        </div>
-      `;
-    });
-
-    html += `</div>`;
-  }
 
   // Информация о самом пересечении
   if (pointData.line1 && pointData.line2) {
@@ -1578,6 +2226,11 @@ function showIntersectionPointInfo(pointIndex) {
           <div class="property-value">${(pointData.ub * 100).toFixed(1)}% от начала</div>
         </div>
         ` : ''}
+        <div style="margin-top: 10px; text-align: center;">
+          <button onclick="editIntersectionPoint(${pointIndex})" style="padding: 6px 12px; font-size: 12px; background: #4A00E0; color: white; border: none; border-radius: 4px;">
+            ⚙️ Редактировать пересечение
+          </button>
+        </div>
       </div>
     `;
   } else if (pointData.line1 && pointData.object) {
@@ -1592,8 +2245,491 @@ function showIntersectionPointInfo(pointIndex) {
     `;
   }
 
+  // Отображаем объекты в точке
+  if (objectsAtPoint.length > 0) {
+    html += `
+      <div class="property-group">
+        <h4>🖼️ Объекты в точке:</h4>
+    `;
+
+    objectsAtPoint.forEach((obj, index) => {
+      const props = obj.properties || {};
+      const notes = props.notes || 'Нет заметок';
+      const customData = props.customData ? JSON.stringify(props.customData, null, 2) : 'Нет пользовательских данных';
+
+      html += `
+        <div class="property-group" style="margin-top: 10px; border-left: 3px solid #4A00E0; padding-left: 10px; background: #f8f9fa; padding: 10px; border-radius: 4px;">
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <h5 style="margin: 5px 0;">${props.name || `Объект ${index + 1}`} (${obj.type})</h5>
+            <button onclick="editObjectFromPoint('${obj.id || obj._id}', ${pointIndex})" 
+                    style="padding: 4px 8px; font-size: 11px; background: #00b894; color: white; border: none; border-radius: 3px;">
+              ⚙️ Редактировать
+            </button>
+          </div>
+          
+          <div class="property-row">
+            <div class="property-label">Тип объекта:</div>
+            <div class="property-value">${props.type || 'Не указан'}</div>
+          </div>
+          <div class="property-row">
+            <div class="property-label">ID:</div>
+            <div class="property-value">${props.imageId || obj.id || 'Не указан'}</div>
+          </div>
+          <div class="property-row">
+            <div class="property-label">Размер:</div>
+            <div class="property-value">${Math.round(obj.width * (obj.scaleX || 1))} × ${Math.round(obj.height * (obj.scaleY || 1))} px</div>
+          </div>
+          <div class="property-row">
+            <div class="property-label">Позиция:</div>
+            <div class="property-value">${Math.round(obj.left)} × ${Math.round(obj.top)} px</div>
+          </div>
+          <div class="property-row">
+            <div class="property-label">Поворот:</div>
+            <div class="property-value">${Math.round(obj.angle || 0)}°</div>
+          </div>
+          <div class="property-row">
+            <div class="property-label">Непрозрачность:</div>
+            <div class="property-value">${Math.round((obj.opacity || 1) * 100)}%</div>
+          </div>
+          ${props.L !== undefined ? `
+          <div class="property-row">
+            <div class="property-label">L (м²):</div>
+            <div class="property-value">${props.L.toFixed(4)}</div>
+          </div>
+          ` : ''}
+          ${props.I !== undefined ? `
+          <div class="property-row">
+            <div class="property-label">I:</div>
+            <div class="property-value">${props.I.toFixed(6)}</div>
+          </div>
+          ` : ''}
+          ${props.K !== undefined ? `
+          <div class="property-row">
+            <div class="property-label">K (м):</div>
+            <div class="property-value">${props.K.toFixed(3)}</div>
+          </div>
+          ` : ''}
+          ${props.W !== undefined ? `
+          <div class="property-row">
+            <div class="property-label">W (кг/м):</div>
+            <div class="property-value">${props.W.toFixed(2)}</div>
+          </div>
+          ` : ''}
+          ${notes !== 'Нет заметок' ? `
+          <div class="property-row">
+            <div class="property-label">Примечания:</div>
+            <div class="property-value" style="font-style: italic; color: #666;">${notes}</div>
+          </div>
+          ` : ''}
+          
+          <div style="margin-top: 8px; font-size: 11px; color: #888;">
+            <strong>Пользовательские данные:</strong>
+            <pre style="background: white; padding: 5px; border-radius: 3px; max-height: 100px; overflow-y: auto; font-size: 10px;">${customData}</pre>
+          </div>
+          
+          <div style="margin-top: 10px; display: flex; gap: 5px;">
+            <button onclick="focusOnObject('${obj.id || obj._id}', ${pointIndex})" 
+                    style="padding: 4px 8px; font-size: 10px; background: #0984e3; color: white; border: none; border-radius: 3px; flex: 1;">
+              🔍 Сфокусировать
+            </button>
+            <button onclick="duplicateObjectFromPoint('${obj.id || obj._id}', ${pointIndex})" 
+                    style="padding: 4px 8px; font-size: 10px; background: #fdcb6e; color: black; border: none; border-radius: 3px; flex: 1;">
+              📋 Дублировать
+            </button>
+          </div>
+        </div>
+      `;
+    });
+
+    html += `</div>`;
+  }
+
+  // Отображаем линии, начинающиеся в точке
+  if (linesStartingHere.length > 0) {
+    html += `
+      <div class="property-group">
+        <h4>🟢 Линии, начинающиеся в точке:</h4>
+    `;
+
+    linesStartingHere.forEach((lineInfo, index) => {
+      const line = lineInfo.line;
+      const props = line.properties || {};
+      const length = Math.sqrt(Math.pow(line.x2 - line.x1, 2) + Math.pow(line.y2 - line.y1, 2));
+      const notes = props.notes || 'Нет заметок';
+      const customData = props.customData ? JSON.stringify(props.customData, null, 2) : 'Нет пользовательских данных';
+
+      html += `
+        <div class="property-group" style="margin-top: 10px; border-left: 3px solid #00b894; padding-left: 10px; background: #f8f9fa; padding: 10px; border-radius: 4px;">
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <h5 style="margin: 5px 0;">${props.name || `Линия ${index + 1}`} (начало)</h5>
+            <button onclick="editLineFromPoint('${line.id || line._id}', ${pointIndex})" 
+                    style="padding: 4px 8px; font-size: 11px; background: #00b894; color: white; border: none; border-radius: 3px;">
+              ⚙️ Редактировать
+            </button>
+          </div>
+          
+          <div class="property-row">
+            <div class="property-label">ID линии:</div>
+            <div class="property-value">${line.id || line._id || 'Не указан'}</div>
+          </div>
+          <div class="property-row">
+            <div class="property-label">Длина:</div>
+            <div class="property-value">${length.toFixed(1)} px</div>
+          </div>
+          <div class="property-row">
+            <div class="property-label">Координаты:</div>
+            <div class="property-value" style="font-size: 12px;">
+              (${line.x1.toFixed(1)}, ${line.y1.toFixed(1)}) → (${line.x2.toFixed(1)}, ${line.y2.toFixed(1)})
+            </div>
+          </div>
+          <div class="property-row">
+            <div class="property-label">Цвет:</div>
+            <div class="property-value">
+              <span style="display: inline-block; width: 12px; height: 12px; background-color: ${line.stroke}; border: 1px solid #ccc; vertical-align: middle; margin-right: 5px;"></span>
+              ${line.stroke}
+            </div>
+          </div>
+          <div class="property-row">
+            <div class="property-label">Толщина:</div>
+            <div class="property-value">${line.strokeWidth} px</div>
+          </div>
+          <div class="property-row">
+            <div class="property-label">Стиль:</div>
+            <div class="property-value">${line.strokeDashArray ? 'Пунктирная' : 'Сплошная'}</div>
+          </div>
+          <div class="property-row">
+            <div class="property-label">L (м²):</div>
+            <div class="property-value">${(props.L || 0).toFixed(4)}</div>
+          </div>
+          <div class="property-row">
+            <div class="property-label">I:</div>
+            <div class="property-value">${(props.I || 0).toFixed(6)}</div>
+          </div>
+          <div class="property-row">
+            <div class="property-label">K (м):</div>
+            <div class="property-value">${(props.K || 0).toFixed(3)}</div>
+          </div>
+          <div class="property-row">
+            <div class="property-label">W (кг/м):</div>
+            <div class="property-value">${(props.W || 0).toFixed(2)}</div>
+          </div>
+          ${notes !== 'Нет заметок' ? `
+          <div class="property-row">
+            <div class="property-label">Примечания:</div>
+            <div class="property-value" style="font-style: italic; color: #666;">${notes}</div>
+          </div>
+          ` : ''}
+          
+          <div style="margin-top: 8px; font-size: 11px; color: #888;">
+            <strong>Пользовательские данные:</strong>
+            <pre style="background: white; padding: 5px; border-radius: 3px; max-height: 100px; overflow-y: auto; font-size: 10px;">${customData}</pre>
+          </div>
+          
+          <div style="margin-top: 10px; display: flex; gap: 5px;">
+            <button onclick="focusOnObject('${line.id || line._id}', ${pointIndex})" 
+                    style="padding: 4px 8px; font-size: 10px; background: #0984e3; color: white; border: none; border-radius: 3px; flex: 1;">
+              🔍 Сфокусировать
+            </button>
+            <button onclick="splitLineAtThisPoint('${line.id || line._id}', ${pointIndex}, ${pointData.x}, ${pointData.y})" 
+                    style="padding: 4px 8px; font-size: 10px; background: #e17055; color: white; border: none; border-radius: 3px; flex: 1;">
+              ✂️ Разделить здесь
+            </button>
+          </div>
+        </div>
+      `;
+    });
+
+    html += `</div>`;
+  }
+
+  // Отображаем линии, заканчивающиеся в точке
+  if (linesEndingHere.length > 0) {
+    html += `
+      <div class="property-group">
+        <h4>🔴 Линии, заканчивающиеся в точке:</h4>
+    `;
+
+    linesEndingHere.forEach((lineInfo, index) => {
+      const line = lineInfo.line;
+      const props = line.properties || {};
+      const length = Math.sqrt(Math.pow(line.x2 - line.x1, 2) + Math.pow(line.y2 - line.y1, 2));
+      const notes = props.notes || 'Нет заметок';
+      const customData = props.customData ? JSON.stringify(props.customData, null, 2) : 'Нет пользовательских данных';
+
+      html += `
+        <div class="property-group" style="margin-top: 10px; border-left: 3px solid #e17055; padding-left: 10px; background: #f8f9fa; padding: 10px; border-radius: 4px;">
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <h5 style="margin: 5px 0;">${props.name || `Линия ${index + 1}`} (конец)</h5>
+            <button onclick="editLineFromPoint('${line.id || line._id}', ${pointIndex})" 
+                    style="padding: 4px 8px; font-size: 11px; background: #e17055; color: white; border: none; border-radius: 3px;">
+              ⚙️ Редактировать
+            </button>
+          </div>
+          
+          <div class="property-row">
+            <div class="property-label">ID линии:</div>
+            <div class="property-value">${line.id || line._id || 'Не указан'}</div>
+          </div>
+          <div class="property-row">
+            <div class="property-label">Длина:</div>
+            <div class="property-value">${length.toFixed(1)} px</div>
+          </div>
+          <div class="property-row">
+            <div class="property-label">Координаты:</div>
+            <div class="property-value" style="font-size: 12px;">
+              (${line.x1.toFixed(1)}, ${line.y1.toFixed(1)}) → (${line.x2.toFixed(1)}, ${line.y2.toFixed(1)})
+            </div>
+          </div>
+          <div class="property-row">
+            <div class="property-label">Цвет:</div>
+            <div class="property-value">
+              <span style="display: inline-block; width: 12px; height: 12px; background-color: ${line.stroke}; border: 1px solid #ccc; vertical-align: middle; margin-right: 5px;"></span>
+              ${line.stroke}
+            </div>
+          </div>
+          <div class="property-row">
+            <div class="property-label">Толщина:</div>
+            <div class="property-value">${line.strokeWidth} px</div>
+          </div>
+          <div class="property-row">
+            <div class="property-label">Стиль:</div>
+            <div class="property-value">${line.strokeDashArray ? 'Пунктирная' : 'Сплошная'}</div>
+          </div>
+          <div class="property-row">
+            <div class="property-label">L (м²):</div>
+            <div class="property-value">${(props.L || 0).toFixed(4)}</div>
+          </div>
+          <div class="property-row">
+            <div class="property-label">I:</div>
+            <div class="property-value">${(props.I || 0).toFixed(6)}</div>
+          </div>
+          <div class="property-row">
+            <div class="property-label">K (м):</div>
+            <div class="property-value">${(props.K || 0).toFixed(3)}</div>
+          </div>
+          <div class="property-row">
+            <div class="property-label">W (кг/м):</div>
+            <div class="property-value">${(props.W || 0).toFixed(2)}</div>
+          </div>
+          ${notes !== 'Нет заметок' ? `
+          <div class="property-row">
+            <div class="property-label">Примечания:</div>
+            <div class="property-value" style="font-style: italic; color: #666;">${notes}</div>
+          </div>
+          ` : ''}
+          
+          <div style="margin-top: 8px; font-size: 11px; color: #888;">
+            <strong>Пользовательские данные:</strong>
+            <pre style="background: white; padding: 5px; border-radius: 3px; max-height: 100px; overflow-y: auto; font-size: 10px;">${customData}</pre>
+          </div>
+          
+          <div style="margin-top: 10px; display: flex; gap: 5px;">
+            <button onclick="focusOnObject('${line.id || line._id}', ${pointIndex})" 
+                    style="padding: 4px 8px; font-size: 10px; background: #0984e3; color: white; border: none; border-radius: 3px; flex: 1;">
+              🔍 Сфокусировать
+            </button>
+            <button onclick="splitLineAtThisPoint('${line.id || line._id}', ${pointIndex}, ${pointData.x}, ${pointData.y})" 
+                    style="padding: 4px 8px; font-size: 10px; background: #e17055; color: white; border: none; border-radius: 3px; flex: 1;">
+              ✂️ Разделить здесь
+            </button>
+          </div>
+        </div>
+      `;
+    });
+
+    html += `</div>`;
+  }
+
   document.getElementById('intersectionPointInfo').innerHTML = html;
   document.getElementById('intersectionPointModal').style.display = 'flex';
+
+  // Определяем вспомогательные функции для кнопок
+  window.zoomToPoint = function (x, y) {
+    const zoomLevel = 2;
+    canvas.setZoom(zoomLevel);
+    const centerX = x - canvas.width / (2 * zoomLevel);
+    const centerY = y - canvas.height / (2 * zoomLevel);
+    canvas.absolutePan({ x: -centerX, y: -centerY });
+    showNotification('Приближено к точке', 'info');
+  };
+
+  window.selectAllAtPoint = function (pointIndex) {
+    const pointData = intersectionPoints[pointIndex];
+    const allObjects = canvas.getObjects();
+    const objectsToSelect = [];
+
+    allObjects.forEach(obj => {
+      if (obj.type === 'line') {
+        const startDist = Math.sqrt(Math.pow(obj.x1 - pointData.x, 2) + Math.pow(obj.y1 - pointData.y, 2));
+        const endDist = Math.sqrt(Math.pow(obj.x2 - pointData.x, 2) + Math.pow(obj.y2 - pointData.y, 2));
+        if (startDist < 5 || endDist < 5) {
+          objectsToSelect.push(obj);
+        }
+      } else if (obj.type === 'image' || obj.type === 'rect' || obj.type === 'circle' || obj.type === 'triangle') {
+        const objRect = getObjectRect(obj);
+        if (pointData.x >= objRect.left && pointData.x <= objRect.right &&
+          pointData.y >= objRect.top && pointData.y <= objRect.bottom) {
+          objectsToSelect.push(obj);
+        }
+      }
+    });
+
+    if (objectsToSelect.length > 0) {
+      const selection = new fabric.ActiveSelection(objectsToSelect, {
+        canvas: canvas
+      });
+      canvas.setActiveObject(selection);
+      canvas.renderAll();
+      showNotification(`Выбрано ${objectsToSelect.length} объектов`, 'success');
+    } else {
+      showNotification('Объектов не найдено', 'info');
+    }
+  };
+
+  window.addNoteToPoint = function (pointIndex) {
+    const pointData = intersectionPoints[pointIndex];
+    const note = prompt('Добавьте заметку к точке пересечения:', pointData.notes || '');
+
+    if (note !== null) {
+      pointData.notes = note;
+      // Обновляем визуальный элемент точки
+      const visual = intersectionVisuals[pointIndex];
+      if (visual && visual.circle) {
+        visual.circle.set('pointData', pointData);
+      }
+      showNotification('Заметка добавлена', 'success');
+      // Перезагружаем информацию о точке
+      showIntersectionPointInfo(pointIndex);
+    }
+  };
+
+  window.editIntersectionPoint = function (pointIndex) {
+    const pointData = intersectionPoints[pointIndex];
+    const newX = prompt('Новая координата X:', pointData.x);
+    const newY = prompt('Новая координата Y:', pointData.y);
+
+    if (newX !== null && newY !== null) {
+      const oldX = pointData.x;
+      const oldY = pointData.y;
+      pointData.x = parseFloat(newX);
+      pointData.y = parseFloat(newY);
+
+      // Обновляем визуальную точку
+      const visual = intersectionVisuals[pointIndex];
+      if (visual && visual.circle && visual.text) {
+        visual.circle.set({
+          left: pointData.x - 6,
+          top: pointData.y - 6
+        });
+        visual.text.set({
+          left: pointData.x,
+          top: pointData.y
+        });
+        canvas.renderAll();
+      }
+
+      showNotification(`Точка перемещена: (${oldX.toFixed(1)}, ${oldY.toFixed(1)}) → (${pointData.x.toFixed(1)}, ${pointData.y.toFixed(1)})`, 'success');
+      showIntersectionPointInfo(pointIndex);
+    }
+  };
+
+  window.editLineFromPoint = function (lineId, pointIndex) {
+    const line = canvas.getObjects().find(obj => (obj.id === lineId || obj._id === lineId) && obj.type === 'line');
+    if (line) {
+      closeIntersectionPointModal();
+      canvas.setActiveObject(line);
+      canvas.renderAll();
+
+      setTimeout(() => {
+        if (line.properties && line.properties.name) {
+          showLinePropertiesModal();
+        } else {
+          showObjectPropertiesModal();
+        }
+      }, 100);
+    } else {
+      showNotification('Линия не найдена', 'error');
+    }
+  };
+
+  window.editObjectFromPoint = function (objectId, pointIndex) {
+    const object = canvas.getObjects().find(obj => (obj.id === objectId || obj._id === objectId) && obj.type !== 'line');
+    if (object) {
+      closeIntersectionPointModal();
+      canvas.setActiveObject(object);
+      canvas.renderAll();
+
+      setTimeout(() => {
+        showObjectPropertiesModal();
+      }, 100);
+    } else {
+      showNotification('Объект не найден', 'error');
+    }
+  };
+
+  window.focusOnObject = function (objectId, pointIndex) {
+    const object = canvas.getObjects().find(obj => obj.id === objectId || obj._id === objectId);
+    if (object) {
+      canvas.setActiveObject(object);
+      canvas.renderAll();
+
+      // Центрируем камеру на объекте
+      const zoomLevel = 2;
+      canvas.setZoom(zoomLevel);
+      const centerX = object.left - canvas.width / (2 * zoomLevel);
+      const centerY = object.top - canvas.height / (2 * zoomLevel);
+      canvas.absolutePan({ x: -centerX, y: -centerY });
+
+      showNotification('Объект выделен и приближен', 'success');
+    }
+  };
+
+  window.duplicateObjectFromPoint = function (objectId, pointIndex) {
+    const object = canvas.getObjects().find(obj => obj.id === objectId || obj._id === objectId);
+    if (object) {
+      saveToUndoStack();
+      object.clone(function (clone) {
+        clone.left += 20;
+        clone.top += 20;
+        if (clone.id) delete clone.id;
+        canvas.add(clone);
+        canvas.setActiveObject(clone);
+        canvas.renderAll();
+        showNotification('Объект дублирован', 'success');
+        showIntersectionPointInfo(pointIndex);
+      });
+    }
+  };
+
+  window.splitLineAtThisPoint = function (lineId, pointIndex, x, y) {
+    const line = canvas.getObjects().find(obj => (obj.id === lineId || obj._id === lineId) && obj.type === 'line');
+    if (line) {
+      const splitResult = splitLineAtPoint(line, { x, y });
+      if (splitResult) {
+        saveToUndoStack();
+        canvas.remove(line);
+        canvas.add(splitResult.line1);
+        canvas.add(splitResult.line2);
+        canvas.renderAll();
+
+        // Обновляем точки пересечения
+        setTimeout(() => {
+          clearIntersectionPoints();
+          const intersections = findAllIntersections();
+          intersectionPoints = intersections;
+          intersections.forEach((inter, idx) => {
+            createIntersectionPoint(inter.x, inter.y, idx, inter);
+          });
+          bringIntersectionPointsToFront();
+        }, 50);
+
+        showNotification('Линия разделена в точке', 'success');
+        showIntersectionPointInfo(pointIndex);
+      } else {
+        showNotification('Не удалось разделить линию', 'error');
+      }
+    }
+  };
 }
 
 function closeIntersectionPointModal() {
@@ -1616,7 +2752,7 @@ function saveDrawing() {
   const json = JSON.stringify(canvas.toJSON(['id', 'properties']));
   localStorage.setItem('fabricDrawing', json);
 
-  const blob = new Blob([json], {type: 'application/json'});
+  const blob = new Blob([json], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
