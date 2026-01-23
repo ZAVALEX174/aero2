@@ -313,7 +313,8 @@ function updateImageTools() {
     const button = document.createElement('button');
     button.className = 'image-item';
     button.innerHTML = `
-      <div style="font-size: 24px;">${image.icon}</div>
+      <div style="font-size: 24px;">
+      <img src="${image.path}" alt="${image.name}">
       <div class="image-item-name">${image.name}</div>
     `;
 
