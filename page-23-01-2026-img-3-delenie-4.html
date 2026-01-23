@@ -61,7 +61,7 @@
 
         <div id="image-tools-container">
           <div class="image-tools-header">
-            <h4>📁 Изображения</h4>
+            <h4>📁 Изображения(Объекты)</h4>
           </div>
           <div class="image-tools-grid" id="imageToolsGrid">
             <!-- Динамически заполняется -->
@@ -216,83 +216,83 @@
   </div>
 
   <!-- Модальное окно свойств объекта -->
-<!--  <div id="objectPropertiesModal" class="modal">-->
-<!--    <div class="modal-content" style="max-width: 500px;">-->
-<!--      <div class="modal-header">-->
-<!--        <h3>⚙️ Свойства объекта</h3>-->
-<!--        <button class="close-button" onclick="closeObjectPropertiesModal()">×</button>-->
-<!--      </div>-->
-<!--      <div class="modal-body">-->
-<!--        <form id="objectPropertiesForm">-->
-<!--          <div class="form-group">-->
-<!--            <label for="objPropertyName">Название:</label>-->
-<!--            <input type="text" id="objPropertyName" class="form-control" required>-->
-<!--          </div>-->
+  <!--  <div id="objectPropertiesModal" class="modal">-->
+  <!--    <div class="modal-content" style="max-width: 500px;">-->
+  <!--      <div class="modal-header">-->
+  <!--        <h3>⚙️ Свойства объекта</h3>-->
+  <!--        <button class="close-button" onclick="closeObjectPropertiesModal()">×</button>-->
+  <!--      </div>-->
+  <!--      <div class="modal-body">-->
+  <!--        <form id="objectPropertiesForm">-->
+  <!--          <div class="form-group">-->
+  <!--            <label for="objPropertyName">Название:</label>-->
+  <!--            <input type="text" id="objPropertyName" class="form-control" required>-->
+  <!--          </div>-->
 
-<!--          <div class="form-group">-->
-<!--            <label for="objPropertyType">Тип:</label>-->
-<!--            <select id="objPropertyType" class="form-control">-->
-<!--              <option value="fan">Вентилятор</option>-->
-<!--              <option value="fire">Датчик пожарный</option>-->
-<!--              <option value="valve">Клапан</option>-->
-<!--              <option value="pump">Насос</option>-->
-<!--              <option value="sensor">Датчик</option>-->
-<!--              <option value="custom">Пользовательский</option>-->
-<!--            </select>-->
-<!--          </div>-->
+  <!--          <div class="form-group">-->
+  <!--            <label for="objPropertyType">Тип:</label>-->
+  <!--            <select id="objPropertyType" class="form-control">-->
+  <!--              <option value="fan">Вентилятор</option>-->
+  <!--              <option value="fire">Датчик пожарный</option>-->
+  <!--              <option value="valve">Клапан</option>-->
+  <!--              <option value="pump">Насос</option>-->
+  <!--              <option value="sensor">Датчик</option>-->
+  <!--              <option value="custom">Пользовательский</option>-->
+  <!--            </select>-->
+  <!--          </div>-->
 
-<!--          <div class="form-group">-->
-<!--            <label for="objPropertyPosition">Позиция:</label>-->
-<!--            <div style="display: flex; gap: 10px;">-->
-<!--              <input type="number" id="objPropertyX" class="form-control" placeholder="X" step="1">-->
-<!--              <input type="number" id="objPropertyY" class="form-control" placeholder="Y" step="1">-->
-<!--            </div>-->
-<!--          </div>-->
+  <!--          <div class="form-group">-->
+  <!--            <label for="objPropertyPosition">Позиция:</label>-->
+  <!--            <div style="display: flex; gap: 10px;">-->
+  <!--              <input type="number" id="objPropertyX" class="form-control" placeholder="X" step="1">-->
+  <!--              <input type="number" id="objPropertyY" class="form-control" placeholder="Y" step="1">-->
+  <!--            </div>-->
+  <!--          </div>-->
 
-<!--          <div class="form-group">-->
-<!--            <label for="objPropertySize">Размер:</label>-->
-<!--            <div style="display: flex; gap: 10px;">-->
-<!--              <input type="number" id="objPropertyWidth" class="form-control" placeholder="Ширина" step="1" min="10"-->
-<!--                max="500">-->
-<!--              <input type="number" id="objPropertyHeight" class="form-control" placeholder="Высота" step="1" min="10"-->
-<!--                max="500">-->
-<!--            </div>-->
-<!--          </div>-->
+  <!--          <div class="form-group">-->
+  <!--            <label for="objPropertySize">Размер:</label>-->
+  <!--            <div style="display: flex; gap: 10px;">-->
+  <!--              <input type="number" id="objPropertyWidth" class="form-control" placeholder="Ширина" step="1" min="10"-->
+  <!--                max="500">-->
+  <!--              <input type="number" id="objPropertyHeight" class="form-control" placeholder="Высота" step="1" min="10"-->
+  <!--                max="500">-->
+  <!--            </div>-->
+  <!--          </div>-->
 
-<!--          <div class="form-group">-->
-<!--            <label for="objPropertyRotation">Поворот (°):</label>-->
-<!--            <input type="number" id="objPropertyRotation" class="form-control" min="0" max="360" step="1">-->
-<!--          </div>-->
+  <!--          <div class="form-group">-->
+  <!--            <label for="objPropertyRotation">Поворот (°):</label>-->
+  <!--            <input type="number" id="objPropertyRotation" class="form-control" min="0" max="360" step="1">-->
+  <!--          </div>-->
 
-<!--          <div class="form-group">-->
-<!--            <label for="objPropertyOpacity">Непрозрачность (%):</label>-->
-<!--            <input type="range" id="objPropertyOpacity" class="form-control" min="10" max="100" value="100">-->
-<!--            <div style="text-align: center; font-size: 12px; color: #666;" id="opacityValue">100%</div>-->
-<!--          </div>-->
+  <!--          <div class="form-group">-->
+  <!--            <label for="objPropertyOpacity">Непрозрачность (%):</label>-->
+  <!--            <input type="range" id="objPropertyOpacity" class="form-control" min="10" max="100" value="100">-->
+  <!--            <div style="text-align: center; font-size: 12px; color: #666;" id="opacityValue">100%</div>-->
+  <!--          </div>-->
 
-<!--          <div class="form-group">-->
-<!--            <label for="objPropertyNotes">Примечания:</label>-->
-<!--            <textarea id="objPropertyNotes" class="form-control" rows="3"-->
-<!--              placeholder="Дополнительные заметки..."></textarea>-->
-<!--          </div>-->
+  <!--          <div class="form-group">-->
+  <!--            <label for="objPropertyNotes">Примечания:</label>-->
+  <!--            <textarea id="objPropertyNotes" class="form-control" rows="3"-->
+  <!--              placeholder="Дополнительные заметки..."></textarea>-->
+  <!--          </div>-->
 
-<!--          <div class="form-group">-->
-<!--            <label for="objPropertyCustomData">Пользовательские данные (JSON):</label>-->
-<!--            <textarea id="objPropertyCustomData" class="form-control" rows="4"-->
-<!--              placeholder='{"key": "value"}'></textarea>-->
-<!--            <small style="color: #666;">Введите валидный JSON для дополнительных свойств</small>-->
-<!--          </div>-->
+  <!--          <div class="form-group">-->
+  <!--            <label for="objPropertyCustomData">Пользовательские данные (JSON):</label>-->
+  <!--            <textarea id="objPropertyCustomData" class="form-control" rows="4"-->
+  <!--              placeholder='{"key": "value"}'></textarea>-->
+  <!--            <small style="color: #666;">Введите валидный JSON для дополнительных свойств</small>-->
+  <!--          </div>-->
 
-<!--          <div class="form-actions">-->
-<!--            <button type="submit" class="btn btn-primary">Сохранить</button>-->
-<!--            <button type="button" class="btn btn-secondary" onclick="closeObjectPropertiesModal()">Отмена</button>-->
-<!--            <button type="button" class="btn btn-danger" onclick="deleteCurrentObject()" style="margin-left: auto;">🗑️-->
-<!--              Удалить</button>-->
-<!--          </div>-->
-<!--        </form>-->
-<!--      </div>-->
-<!--    </div>-->
-<!--  </div>-->
+  <!--          <div class="form-actions">-->
+  <!--            <button type="submit" class="btn btn-primary">Сохранить</button>-->
+  <!--            <button type="button" class="btn btn-secondary" onclick="closeObjectPropertiesModal()">Отмена</button>-->
+  <!--            <button type="button" class="btn btn-danger" onclick="deleteCurrentObject()" style="margin-left: auto;">🗑️-->
+  <!--              Удалить</button>-->
+  <!--          </div>-->
+  <!--        </form>-->
+  <!--      </div>-->
+  <!--    </div>-->
+  <!--  </div>-->
 
 
   <!-- Модальное окно свойств объекта -->
@@ -353,7 +353,8 @@
           <label class="form-label">Непрозрачность:</label>
           <div style="display: flex; align-items: center; gap: 10px;">
             <input type="range" id="objPropertyOpacity" min="10" max="100" value="100" style="flex: 1;">
-            <span id="opacityValue" style="min-width: 40px; text-align: right; font-size: 12px; color: #666;">100%</span>
+            <span id="opacityValue"
+              style="min-width: 40px; text-align: right; font-size: 12px; color: #666;">100%</span>
           </div>
         </div>
 
