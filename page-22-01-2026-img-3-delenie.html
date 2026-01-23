@@ -1,0 +1,4145 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <title>Редактор технических чертежей (Fabric.js) с разбиением линий</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.0/fabric.min.js"></script>
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      padding: 10px;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+    }
+
+    .container {
+      background: white;
+      border-radius: 15px;
+      padding: 20px;
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+      max-width: 1400px;
+      margin: 0 auto;
+    }
+
+    h1 {
+      color: #2c3e50;
+      text-align: center;
+      margin-bottom: 5px;
+      font-size: 32px;
+      font-weight: 700;
+    }
+
+    .subtitle {
+      color: #7f8c8d;
+      text-align: center;
+      margin-bottom: 25px;
+      font-size: 16px;
+    }
+
+    .main-content {
+      display: flex;
+      gap: 25px;
+      margin-top: 10px;
+    }
+
+    .left-panel {
+      flex: 1;
+      max-width: 320px;
+      min-width: 300px;
+    }
+
+    .canvas-container {
+      flex: 3;
+      min-height: 600px;
+    }
+
+    #canvas-container {
+      border: 2px solid #ddd;
+      border-radius: 10px;
+      overflow: hidden;
+      box-shadow: 0 5px 15px rgba(0, 0, 0, 0.08);
+      background: #fff;
+    }
+
+    #fabric-canvas {
+      border-radius: 8px;
+    }
+
+    #tools {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 10px;
+      margin-bottom: 20px;
+      background: #f8f9fa;
+      padding: 15px;
+      border-radius: 10px;
+      border: 1px solid #e9ecef;
+    }
+
+    button {
+      padding: 8px 5px;
+      border: none;
+      border-radius: 8px;
+      background: linear-gradient(135deg, #6a11cb 0%, #2575fc 100%);
+      color: white;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      font-size: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 5px;
+    }
+
+    button:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 7px 14px rgba(50, 50, 93, 0.1), 0 3px 6px rgba(0, 0, 0, 0.08);
+    }
+
+    button:active {
+      transform: translateY(0);
+    }
+
+    button:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+
+    .active-mode {
+      background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%) !important;
+      box-shadow: 0 4px 6px rgba(50, 50, 93, 0.11), 0 1px 3px rgba(0, 0, 0, 0.08);
+    }
+
+    #status {
+      background: #2c3e50;
+      color: white;
+      padding: 12px 20px;
+      border-radius: 8px;
+      margin-top: 15px;
+      font-family: 'Courier New', monospace;
+      font-size: 14px;
+      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+      line-height: 1.4;
+    }
+
+    .properties-panel {
+      background: #fff;
+      border: 1px solid #e0e0e0;
+      border-radius: 10px;
+      padding: 20px;
+      margin-top: 20px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+      max-height: 300px;
+      overflow-y: auto;
+    }
+
+    .properties-panel h3 {
+      color: #2c3e50;
+      margin-top: 0;
+      margin-bottom: 20px;
+      padding-bottom: 10px;
+      border-bottom: 2px solid #f0f0f0;
+      font-size: 18px;
+      position: sticky;
+      top: 0;
+      background: white;
+      z-index: 1;
+    }
+
+    .property-group {
+      margin-bottom: 20px;
+      padding: 15px;
+      background: #f8f9fa;
+      border-radius: 8px;
+      border-left: 4px solid #6a11cb;
+    }
+
+    .property-group h4 {
+      color: #34495e;
+      margin-top: 0;
+      margin-bottom: 15px;
+      font-size: 15px;
+    }
+
+    .property-row {
+      display: flex;
+      align-items: center;
+      margin-bottom: 10px;
+    }
+
+    .property-label {
+      flex: 1;
+      color: #555;
+      font-size: 13px;
+      font-weight: 500;
+    }
+
+    .property-value {
+      flex: 1;
+      font-size: 13px;
+    }
+
+    input[type="number"],
+    input[type="text"],
+    input[type="color"],
+    input[type="url"],
+    select,
+    textarea {
+      width: 100%;
+      padding: 10px;
+      border: 1px solid #ddd;
+      border-radius: 6px;
+      font-size: 14px;
+      transition: border 0.3s;
+      box-sizing: border-box;
+    }
+
+    input[type="number"]:focus,
+    input[type="text"]:focus,
+    input[type="color"]:focus,
+    input[type="url"]:focus,
+    select:focus,
+    textarea:focus {
+      outline: none;
+      border-color: #6a11cb;
+      box-shadow: 0 0 0 2px rgba(106, 17, 203, 0.2);
+    }
+
+    .modal {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.5);
+      z-index: 1000;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+
+    .modal-content {
+      background: white;
+      padding: 25px;
+      border-radius: 15px;
+      width: 100%;
+      max-width: 500px;
+      max-height: 90vh;
+      overflow-y: auto;
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2);
+      animation: modalSlideIn 0.3s ease;
+    }
+
+    @keyframes modalSlideIn {
+      from {
+        opacity: 0;
+        transform: translateY(-50px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    .modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 20px;
+      padding-bottom: 15px;
+      border-bottom: 2px solid #f0f0f0;
+    }
+
+    .modal-title {
+      font-size: 20px;
+      color: #2c3e50;
+      font-weight: 600;
+      margin: 0;
+    }
+
+    .close-modal {
+      background: none;
+      border: none;
+      font-size: 24px;
+      color: #7f8c8d;
+      cursor: pointer;
+      padding: 5px;
+      width: 36px;
+      height: 36px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 50%;
+      transition: all 0.3s;
+    }
+
+    .close-modal:hover {
+      background: #f5f5f5;
+      color: #e74c3c;
+    }
+
+    .modal-form {
+      display: grid;
+      gap: 15px;
+    }
+
+    .form-group {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .form-label {
+      color: #34495e;
+      font-weight: 600;
+      font-size: 14px;
+    }
+
+    .form-row {
+      display: flex;
+      gap: 10px;
+    }
+
+    .form-row .form-group {
+      flex: 1;
+    }
+
+    .modal-buttons {
+      display: flex;
+      gap: 10px;
+      margin-top: 20px;
+      justify-content: flex-end;
+    }
+
+    .btn {
+      padding: 10px 20px;
+      border-radius: 8px;
+      border: none;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.3s;
+      font-size: 14px;
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, #6a11cb 0%, #2575fc 100%);
+      color: white;
+    }
+
+    .btn-secondary {
+      background: #95a5a6;
+      color: white;
+    }
+
+    .btn-danger {
+      background: #e74c3c;
+      color: white;
+    }
+
+    .btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 7px 14px rgba(50, 50, 93, 0.1);
+    }
+
+    .instructions {
+      background: #e8f4fc;
+      border-left: 4px solid #3498db;
+      padding: 15px;
+      border-radius: 8px;
+      margin-top: 20px;
+    }
+
+    .instructions h4 {
+      color: #2c3e50;
+      margin-top: 0;
+      margin-bottom: 10px;
+      font-size: 16px;
+    }
+
+    .instructions ul {
+      margin: 10px 0;
+      padding-left: 20px;
+      color: #555;
+    }
+
+    .instructions li {
+      margin-bottom: 5px;
+      line-height: 1.5;
+      font-size: 13px;
+    }
+
+    .image-type-badge {
+      display: inline-block;
+      background: #2c3e50;
+      color: white;
+      padding: 2px 8px;
+      border-radius: 10px;
+      font-size: 10px;
+      margin-left: 5px;
+      text-transform: uppercase;
+    }
+
+    #image-tools-container {
+      margin-bottom: 20px;
+    }
+
+    .image-tools-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 10px;
+    }
+
+    .image-tools-header h4 {
+      color: #2c3e50;
+      margin: 0;
+      font-size: 16px;
+    }
+
+    .image-tools-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 8px;
+      margin-bottom: 15px;
+      max-height: 200px;
+      overflow-y: auto;
+      padding: 10px;
+      border: 1px solid #e9ecef;
+      border-radius: 8px;
+      background: #f8f9fa;
+    }
+
+    .custom-image-actions {
+      display: flex;
+      gap: 5px;
+      margin-top: 5px;
+      justify-content: flex-end;
+    }
+
+    .custom-image-actions button {
+      padding: 4px 8px;
+      font-size: 10px;
+      background: #95a5a6;
+    }
+
+    .custom-image-actions .edit-btn {
+      background: #3498db;
+    }
+
+    .custom-image-actions .delete-btn {
+      background: #e74c3c;
+    }
+
+    .image-item {
+      border: 2px solid transparent;
+      border-radius: 8px;
+      padding: 10px;
+      cursor: pointer;
+      transition: all 0.3s;
+      text-align: center;
+      background: white;
+    }
+
+    .image-item:hover {
+      border-color: #6a11cb;
+      background: #f8f9fa;
+    }
+
+    .image-item.selected {
+      border-color: #38ef7d;
+      background: #e8f8ef;
+    }
+
+    .image-item img {
+      width: 40px;
+      height: 40px;
+      object-fit: contain;
+      margin-bottom: 5px;
+    }
+
+    .image-item-name {
+      font-size: 11px;
+      font-weight: 600;
+      color: #2c3e50;
+      margin-bottom: 3px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .image-item-type {
+      font-size: 9px;
+      color: #7f8c8d;
+      background: #f1f1f1;
+      padding: 2px 6px;
+      border-radius: 10px;
+      display: inline-block;
+    }
+
+    .preview-image {
+      width: 100px;
+      height: 100px;
+      object-fit: contain;
+      border: 2px dashed #ddd;
+      border-radius: 8px;
+      margin: 10px auto;
+      display: block;
+      background: #f8f9fa;
+    }
+
+    .drag-over {
+      border-color: #6a11cb !important;
+      background: rgba(106, 17, 203, 0.1) !important;
+    }
+
+    .loading-spinner {
+      border: 3px solid #f3f3f3;
+      border-top: 3px solid #6a11cb;
+      border-radius: 50%;
+      width: 30px;
+      height: 30px;
+      animation: spin 1s linear infinite;
+      margin: 20px auto;
+    }
+
+    @keyframes spin {
+      0% {
+        transform: rotate(0deg);
+      }
+      100% {
+        transform: rotate(360deg);
+      }
+    }
+
+    .hint {
+      font-size: 12px;
+      color: #7f8c8d;
+      margin-top: 5px;
+    }
+
+    .section-divider {
+      height: 1px;
+      background: #e0e0e0;
+      margin: 20px 0;
+    }
+
+    .tab-buttons {
+      display: flex;
+      border-bottom: 2px solid #e0e0e0;
+      margin-bottom: 15px;
+    }
+
+    .tab-button {
+      padding: 10px 20px;
+      background: none;
+      border: none;
+      border-bottom: 2px solid transparent;
+      color: #7f8c8d;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.3s;
+    }
+
+    .tab-button.active {
+      color: #6a11cb;
+      border-bottom-color: #6a11cb;
+    }
+
+    .tab-content {
+      display: none;
+    }
+
+    .tab-content.active {
+      display: block;
+    }
+
+    .notification {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      padding: 15px 20px;
+      border-radius: 8px;
+      color: white;
+      font-weight: 600;
+      z-index: 2000;
+      animation: slideIn 0.3s ease, fadeOut 0.3s ease 2.7s forwards;
+      box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+    }
+
+    .notification.success {
+      background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+    }
+
+    .notification.error {
+      background: linear-gradient(135deg, #ff416c 0%, #ff4b2b 100%);
+    }
+
+    .notification.info {
+      background: linear-gradient(135deg, #3498db 0%, #2ecc71 100%);
+    }
+
+    @keyframes slideIn {
+      from {
+        transform: translateX(100%);
+        opacity: 0;
+      }
+      to {
+        transform: translateX(0);
+        opacity: 1;
+      }
+    }
+
+    @keyframes fadeOut {
+      from {
+        opacity: 1;
+      }
+      to {
+        opacity: 0;
+      }
+    }
+
+    .context-menu {
+      position: absolute;
+      background: white;
+      border-radius: 8px;
+      box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+      z-index: 1000;
+      min-width: 150px;
+      display: none;
+    }
+
+    .context-menu-item {
+      padding: 10px 15px;
+      cursor: pointer;
+      transition: background 0.2s;
+      font-size: 14px;
+      color: #333;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .context-menu-item:hover {
+      background: #f5f5f5;
+    }
+
+    .context-menu-divider {
+      height: 1px;
+      background: #e0e0e0;
+      margin: 5px 0;
+    }
+
+    @media (max-width: 1200px) {
+      .main-content {
+        flex-direction: column;
+      }
+
+      .left-panel {
+        max-width: 100%;
+      }
+
+      .canvas-container {
+        min-height: 500px;
+      }
+    }
+
+    @media (max-width: 768px) {
+      #tools {
+        grid-template-columns: repeat(3, 1fr);
+      }
+
+      .image-tools-grid {
+        grid-template-columns: repeat(3, 1fr);
+      }
+    }
+
+    @media (max-width: 576px) {
+      #tools {
+        grid-template-columns: repeat(2, 1fr);
+      }
+
+      .image-tools-grid {
+        grid-template-columns: repeat(2, 1fr);
+      }
+
+      .modal-content {
+        padding: 15px;
+      }
+    }
+  </style>
+</head>
+<body>
+<div class="container">
+  <h1>📐 Редактор технических чертежей</h1>
+  <p class="subtitle">Создавайте чертежи с привязкой к сетке, редактируйте
+    свойства объектов и экспортируйте в JSON
+  </p>
+
+  <div class="main-content">
+    <div class="left-panel">
+      <div id="tools">
+        <button
+          onclick="activateLineDrawing()"
+          id="lineDrawingBtn"
+        >
+          <span>📏</span> Линия
+        </button>
+        <button onclick="splitLinesAtIntersections()">
+          <span>✂️</span> Разбить линии
+        </button>
+        <button onclick="splitLinesAtSelectedImage()">
+          <span>🔗</span> Разбить по объекту
+        </button>
+        <button onclick="findIntersectionsOnly()">
+          <span>🔍</span> Пересечения
+        </button>
+        <button onclick="clearIntersectionPoints()">
+          <span>🧹</span> Очистить точки
+        </button>
+        <button
+          onclick="toggleContinuousMode()"
+          id="continuousModeBtn"
+        >
+          <span>🔗</span> Непрерывный (ВЫКЛ)
+        </button>
+        <button onclick="showLinePropertiesModal()">
+          <span>⚙️</span> Свойства линии
+        </button>
+        <button onclick="showImagePropertiesModal()">
+          <span>🖼️</span> Свойства объекта
+        </button>
+        <button
+          onclick="showAddImageModal()"
+          id="addImageBtn"
+        >
+          <span>➕</span> Добавить изображение
+        </button>
+        <button onclick="saveDrawing()">
+          <span>💾</span> Сохранить
+        </button>
+        <button onclick="loadDrawing()">
+          <span>📂</span> Загрузить
+        </button>
+        <button onclick="clearCanvas()">
+          <span>🗑️</span> Очистить холст
+        </button>
+        <button onclick="exportToConsole()">
+          <span>📊</span> Экспорт
+        </button>
+        <button
+          onclick="toggleGrid()"
+          id="gridToggleBtn"
+        >
+          <span>🔲</span> Сетка (ВКЛ)
+        </button>
+        <button
+          onclick="undoAction()"
+          id="undoBtn"
+        >
+          <span>↩️</span> Отменить
+        </button>
+        <button
+          onclick="toggleAutoSplitMode()"
+          id="autoSplitBtn"
+        >
+          <span>⚡</span> Авторазбивка (ВКЛ)
+        </button>
+      </div>
+
+      <div id="image-tools-container">
+        <div class="image-tools-header">
+          <h4>📁 Изображения</h4>
+          <button
+            onclick="showManageImagesModal()"
+            style="padding: 5px 10px; font-size: 11px;"
+          >
+            <span>⚙️</span> Управление
+          </button>
+        </div>
+        <div
+          class="image-tools-grid"
+          id="imageToolsGrid"
+        >
+          <!-- Динамически заполняется JavaScript -->
+        </div>
+      </div>
+
+      <div class="properties-panel">
+        <h3>Свойства выбранного объекта</h3>
+        <div id="props-content">
+          <p style="color: #7f8c8d; font-style: italic; text-align: center; padding: 20px;">
+            Выберите объект на чертеже для редактирования свойств
+          </p>
+        </div>
+      </div>
+
+      <div id="status">
+        Готово к работе. Объектов на чертеже: 0
+      </div>
+
+      <div class="instructions">
+        <h4>📋 Горячие клавиши</h4>
+        <ul>
+          <li><strong>ESC</strong> - отмена текущего действия</li>
+          <li><strong>Delete</strong> - удалить выбранный объект</li>
+          <li><strong>Ctrl+S</strong> - сохранить чертеж</li>
+          <li><strong>Ctrl+O</strong> - загрузить чертеж</li>
+          <li><strong>Ctrl+Z</strong> - отменить последнее действие</li>
+          <li><strong>Ctrl+Y</strong> - повторить отмененное действие</li>
+          <li><strong>Alt + перетаскивание</strong> - перемещение холста</li>
+          <li><strong>Shift + клик</strong> - разместить объект</li>
+          <li><strong>I</strong> - найти пересечения</li>
+          <li><strong>Ctrl+Shift+S</strong> - разбить линии</li>
+          <li><strong>L</strong> - рисовать линию</li>
+          <li><strong>N</strong> - добавить новое изображение</li>
+          <li><strong>G</strong> - скрыть/показать сетку</li>
+          <li><strong>Ctrl+G</strong> - сгруппировать объекты</li>
+          <li><strong>Ctrl+Shift+G</strong> - разгруппировать</li>
+          <li><strong>A</strong> - включить/выключить авторазбивку</li>
+          <li><strong>O</strong> - разбить линии по выбранному объекту</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="canvas-container">
+      <div id="canvas-container">
+        <canvas
+          id="fabric-canvas"
+          width="1050"
+          height="600"
+        ></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Модальное окно редактирования свойств линии -->
+<div
+  id="linePropertiesModal"
+  class="modal"
+>
+  <div class="modal-content">
+    <div class="modal-header">
+      <h2 class="modal-title">⚙️ Свойства линии</h2>
+      <button
+        class="close-modal"
+        onclick="closeLinePropertiesModal()"
+      >×
+      </button>
+    </div>
+    <form
+      id="linePropertiesForm"
+      class="modal-form"
+    >
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Название:</label>
+          <input
+            type="text"
+            id="propertyName"
+            placeholder="Например: Главная балка"
+            required
+          >
+        </div>
+        <div class="form-group">
+          <label class="form-label">Цвет линии:</label>
+          <input
+            type="color"
+            id="propertyColor"
+            value="#2a9d8f"
+          >
+        </div>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Толщина (px):</label>
+          <select id="propertyWidth">
+            <option value="1">1 px</option>
+            <option
+              value="2"
+              selected
+            >2 px
+            </option>
+            <option value="3">3 px</option>
+            <option value="4">4 px</option>
+            <option value="5">5 px</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Тип линии:</label>
+          <select id="propertyLineType">
+            <option
+              value="solid"
+              selected
+            >Сплошная
+            </option>
+            <option value="dashed">Пунктирная</option>
+            <option value="dotted">Точечная</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="section-divider"></div>
+
+      <div class="form-group">
+        <label class="form-label">1. Длина (L, м²):</label>
+        <input
+          type="number"
+          id="propertyL"
+          step="0.001"
+          min="0"
+          placeholder="0.5237"
+          required
+        >
+      </div>
+      <div class="form-group">
+        <label class="form-label">2. Коэффициент (I):</label>
+        <input
+          type="number"
+          id="propertyI"
+          step="0.000001"
+          min="0"
+          placeholder="0.015327"
+          required
+        >
+      </div>
+      <div class="form-group">
+        <label class="form-label">3. Параметр (K, м):</label>
+        <input
+          type="number"
+          id="propertyK"
+          step="0.001"
+          min="0"
+          placeholder="10.235"
+          required
+        >
+      </div>
+      <div class="form-group">
+        <label class="form-label">4. Вес (W, кг/м):</label>
+        <input
+          type="number"
+          id="propertyW"
+          step="0.01"
+          min="0"
+          placeholder="1.0"
+          required
+        >
+      </div>
+
+      <div class="modal-buttons">
+        <button
+          type="button"
+          class="btn btn-secondary"
+          onclick="closeLinePropertiesModal()"
+        >Отмена
+        </button>
+        <button
+          type="submit"
+          class="btn btn-primary"
+        >Применить свойства
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Модальное окно редактирования свойств изображения -->
+<div
+  id="imagePropertiesModal"
+  class="modal"
+>
+  <div class="modal-content">
+    <div class="modal-header">
+      <h2 class="modal-title">🖼️ Свойства объекта</h2>
+      <button
+        class="close-modal"
+        onclick="closeImagePropertiesModal()"
+      >×
+      </button>
+    </div>
+    <form
+      id="imagePropertiesForm"
+      class="modal-form"
+    >
+      <div class="tab-buttons">
+        <button
+          type="button"
+          class="tab-button active"
+          onclick="switchImageTab('basic')"
+        >Основные
+        </button>
+        <button
+          type="button"
+          class="tab-button"
+          onclick="switchImageTab('technical')"
+        >Технические
+        </button>
+        <button
+          type="button"
+          class="tab-button"
+          onclick="switchImageTab('custom')"
+        >Пользовательские
+        </button>
+      </div>
+
+      <div
+        id="imageTabBasic"
+        class="tab-content active"
+      >
+        <div class="form-group">
+          <label class="form-label">Название:</label>
+          <input
+            type="text"
+            id="imagePropertyName"
+            placeholder="Например: Вентилятор приточный"
+            required
+          >
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Ширина (px):</label>
+            <input
+              type="number"
+              id="imageWidth"
+              step="1"
+              min="10"
+              max="100"
+              placeholder="40"
+              required
+            >
+          </div>
+          <div class="form-group">
+            <label class="form-label">Высота (px):</label>
+            <input
+              type="number"
+              id="imageHeight"
+              step="1"
+              min="10"
+              max="100"
+              placeholder="40"
+              required
+            >
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Поворот (градусы):</label>
+          <input
+            type="number"
+            id="imageRotation"
+            step="1"
+            min="0"
+            max="360"
+            placeholder="0"
+          >
+        </div>
+        <div class="form-group">
+          <label class="form-label">Непрозрачность:</label>
+          <input
+            type="range"
+            id="imageOpacity"
+            min="0.1"
+            max="1"
+            step="0.1"
+            value="1"
+          >
+          <span id="opacityValue">100%</span>
+        </div>
+      </div>
+
+      <div
+        id="imageTabTechnical"
+        class="tab-content"
+      >
+        <div class="form-group">
+          <label class="form-label">Тип объекта:</label>
+          <select
+            id="imageType"
+            onchange="updateImageTypeFields()"
+          >
+            <option value="default">Обычный объект</option>
+            <option value="fan">Вентилятор</option>
+            <option value="fire">Пожарный датчик</option>
+            <option value="valve">Клапан</option>
+            <option value="pump">Насос</option>
+            <option value="sensor">Датчик</option>
+          </select>
+        </div>
+        <div
+          id="fanProperties"
+          style="display: none;"
+        >
+          <div class="form-group">
+            <label class="form-label">Количество воздуха (м³/ч):</label>
+            <input
+              type="number"
+              id="imageAirQuantity"
+              step="0.1"
+              min="0"
+              placeholder="100.0"
+            >
+          </div>
+          <div class="form-group">
+            <label class="form-label">Сопротивление воздуха (Па):</label>
+            <input
+              type="number"
+              id="imageAirResistance"
+              step="0.1"
+              min="0"
+              placeholder="30.0"
+            >
+          </div>
+        </div>
+        <div
+          id="fireProperties"
+          style="display: none;"
+        >
+          <div class="form-group">
+            <label class="form-label">Температура срабатывания (°C):</label>
+            <input
+              type="number"
+              id="fireTemperature"
+              step="1"
+              min="0"
+              placeholder="70"
+            >
+          </div>
+          <div class="form-group">
+            <label class="form-label">Зона покрытия (м²):</label>
+            <input
+              type="number"
+              id="fireCoverage"
+              step="1"
+              min="0"
+              placeholder="50"
+            >
+          </div>
+        </div>
+        <div
+          id="valveProperties"
+          style="display: none;"
+        >
+          <div class="form-group">
+            <label class="form-label">Диаметр (мм):</label>
+            <input
+              type="number"
+              id="valveDiameter"
+              step="1"
+              min="0"
+              placeholder="50"
+            >
+          </div>
+          <div class="form-group">
+            <label class="form-label">Тип привода:</label>
+            <select id="valveActuator">
+              <option value="manual">Ручной</option>
+              <option value="electric">Электрический</option>
+              <option value="pneumatic">Пневматический</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <div
+        id="imageTabCustom"
+        class="tab-content"
+      >
+        <div id="customPropertiesContainer">
+          <!-- Динамически заполняется пользовательскими свойствами -->
+        </div>
+        <div style="margin-top: 10px;">
+          <button
+            type="button"
+            class="btn btn-secondary"
+            onclick="addCustomPropertyField()"
+            style="padding: 8px 12px; font-size: 12px;"
+          >
+            ➕ Добавить свойство
+          </button>
+        </div>
+      </div>
+
+      <div class="modal-buttons">
+        <button
+          type="button"
+          class="btn btn-secondary"
+          onclick="closeImagePropertiesModal()"
+        >Отмена
+        </button>
+        <button
+          type="submit"
+          class="btn btn-primary"
+        >Применить свойства
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Модальное окно добавления нового изображения -->
+<div
+  id="addImageModal"
+  class="modal"
+>
+  <div class="modal-content">
+    <div class="modal-header">
+      <h2 class="modal-title">➕ Добавить новое изображение</h2>
+      <button
+        class="close-modal"
+        onclick="closeAddImageModal()"
+      >×
+      </button>
+    </div>
+
+    <div class="tab-buttons">
+      <button
+        type="button"
+        class="tab-button active"
+        onclick="switchAddImageTab('upload')"
+      >Загрузить
+      </button>
+      <button
+        type="button"
+        class="tab-button"
+        onclick="switchAddImageTab('url')"
+      >По URL
+      </button>
+      <button
+        type="button"
+        class="tab-button"
+        onclick="switchAddImageTab('gallery')"
+      >Галерея
+      </button>
+    </div>
+
+    <form
+      id="addImageForm"
+      class="modal-form"
+    >
+      <div
+        id="uploadTab"
+        class="tab-content active"
+      >
+        <div class="form-group">
+          <label class="form-label">Загрузите изображение:</label>
+          <div
+            id="dropArea"
+            style="border: 2px dashed #6a11cb; border-radius: 8px; padding: 30px; text-align: center; cursor: pointer; background: #f8f9fa;"
+          >
+            <span style="font-size: 48px;">📁</span>
+            <p style="margin: 10px 0; font-weight: 600; color: #2c3e50;">
+              Перетащите файл сюда
+            </p>
+            <p style="margin: 0; color: #7f8c8d; font-size: 14px;">или нажмите
+              для выбора файла
+            </p>
+            <input
+              type="file"
+              id="fileInput"
+              accept="image/*"
+              style="display: none;"
+            >
+          </div>
+          <div class="hint">Поддерживаются форматы: PNG, JPG, SVG, GIF.
+            Максимальный размер: 2MB
+          </div>
+        </div>
+
+        <div
+          id="previewContainer"
+          style="display: none;"
+        >
+          <h4 style="margin: 15px 0 10px 0;">Предпросмотр:</h4>
+          <img
+            id="imagePreview"
+            class="preview-image"
+            src=""
+            alt="Предпросмотр"
+          >
+          <div
+            class="hint"
+            style="text-align: center;"
+          >Размер будет автоматически ограничен 40×40 пикселей
+          </div>
+        </div>
+      </div>
+
+      <div
+        id="urlTab"
+        class="tab-content"
+      >
+        <div class="form-group">
+          <label class="form-label">URL изображения:</label>
+          <input
+            type="url"
+            id="newImageUrl"
+            placeholder="https://example.com/image.png"
+          >
+          <div class="hint">Укажите прямую ссылку на изображение</div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Или выберите из стандартных:</label>
+          <div
+            class="image-tools-grid"
+            id="standardImagesGrid"
+          >
+            <!-- Заполняется JavaScript -->
+          </div>
+        </div>
+      </div>
+
+      <div
+        id="galleryTab"
+        class="tab-content"
+      >
+        <div id="galleryContainer">
+          <!-- Заполняется JavaScript -->
+        </div>
+      </div>
+
+      <div class="section-divider"></div>
+
+      <div class="form-group">
+        <label class="form-label">Название изображения:</label>
+        <input
+          type="text"
+          id="newImageName"
+          placeholder="Например: Дверь"
+          required
+        >
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Иконка (эмодзи):</label>
+          <input
+            type="text"
+            id="newImageIcon"
+            placeholder="🚪"
+            value="🖼️"
+            maxlength="2"
+          >
+        </div>
+        <div class="form-group">
+          <label class="form-label">Тип объекта:</label>
+          <select id="newImageType">
+            <option value="default">Обычный объект</option>
+            <option value="fan">Вентилятор</option>
+            <option value="fire">Пожарный датчик</option>
+            <option value="valve">Клапан</option>
+            <option value="pump">Насос</option>
+            <option value="sensor">Датчик</option>
+            <option value="door">Дверь</option>
+            <option value="window">Окно</option>
+            <option value="equipment">Оборудование</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Описание (необязательно):</label>
+        <textarea
+          id="newImageDescription"
+          rows="2"
+          placeholder="Краткое описание изображения"
+        ></textarea>
+      </div>
+
+      <div
+        id="addImageCustomProps"
+        style="display: none;"
+      >
+        <h4 style="margin: 15px 0 10px 0;">Пользовательские свойства:</h4>
+        <div id="addImageCustomPropsContainer">
+          <!-- Динамически заполняется -->
+        </div>
+        <div style="margin-top: 10px;">
+          <button
+            type="button"
+            class="btn btn-secondary"
+            onclick="addCustomPropertyField('addImage')"
+            style="padding: 8px 12px; font-size: 12px;"
+          >
+            ➕ Добавить свойство
+          </button>
+        </div>
+      </div>
+
+      <div class="modal-buttons">
+        <button
+          type="button"
+          class="btn btn-secondary"
+          onclick="closeAddImageModal()"
+        >Отмена
+        </button>
+        <button
+          type="submit"
+          class="btn btn-primary"
+          id="submitImageBtn"
+        >Добавить изображение
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Модальное окно управления изображениями -->
+<div
+  id="manageImagesModal"
+  class="modal"
+>
+  <div
+    class="modal-content"
+    style="max-width: 700px;"
+  >
+    <div class="modal-header">
+      <h2 class="modal-title">⚙️ Управление изображениями</h2>
+      <button
+        class="close-modal"
+        onclick="closeManageImagesModal()"
+      >×
+      </button>
+    </div>
+
+    <div class="tab-buttons">
+      <button
+        type="button"
+        class="tab-button active"
+        onclick="switchManageTab('custom')"
+      >Пользовательские
+      </button>
+      <button
+        type="button"
+        class="tab-button"
+        onclick="switchManageTab('default')"
+      >Стандартные
+      </button>
+      <button
+        type="button"
+        class="tab-button"
+        onclick="switchManageTab('import')"
+      >Импорт/Экспорт
+      </button>
+    </div>
+
+    <div
+      id="customImagesTab"
+      class="tab-content active"
+    >
+      <div style="margin-bottom: 15px; display: flex; justify-content: space-between; align-items: center;">
+        <p>Ваши пользовательские изображения:</p>
+        <button
+          onclick="showAddImageModal(); closeManageImagesModal();"
+          class="btn btn-primary"
+          style="padding: 8px 12px;"
+        >
+          ➕ Добавить новое
+        </button>
+      </div>
+
+      <div
+        id="customImagesList"
+        class="image-tools-grid"
+        style="grid-template-columns: repeat(3, 1fr); max-height: 300px;"
+      >
+        <!-- Заполняется JavaScript -->
+      </div>
+
+      <div
+        class="hint"
+        style="margin-top: 10px;"
+      >
+        Всего пользовательских изображений:
+        <span id="customImagesCount">0</span>
+      </div>
+    </div>
+
+    <div
+      id="defaultImagesTab"
+      class="tab-content"
+    >
+      <p>Стандартные изображения, встроенные в редактор:</p>
+      <div
+        id="defaultImagesList"
+        class="image-tools-grid"
+        style="grid-template-columns: repeat(3, 1fr); max-height: 300px;"
+      >
+        <!-- Заполняется JavaScript -->
+      </div>
+    </div>
+
+    <div
+      id="importExportTab"
+      class="tab-content"
+    >
+      <div class="form-group">
+        <h4 style="margin-top: 0;">Экспорт изображений</h4>
+        <p>Экспортируйте все ваши пользовательские изображения в файл для
+          резервного копирования или переноса:
+        </p>
+        <button
+          onclick="exportCustomImages()"
+          class="btn btn-primary"
+          style="width: 100%; margin-bottom: 15px;"
+        >
+          📥 Экспортировать изображения
+        </button>
+      </div>
+
+      <div class="form-group">
+        <h4>Импорт изображений</h4>
+        <p>Импортируйте изображения из файла (формат JSON):</p>
+        <div style="border: 2px dashed #6a11cb; border-radius: 8px; padding: 20px; text-align: center; cursor: pointer; background: #f8f9fa; margin-bottom: 15px;">
+          <span style="font-size: 36px;">📁</span>
+          <p style="margin: 10px 0; font-weight: 600; color: #2c3e50;">
+            Перетащите JSON файл сюда
+          </p>
+          <p style="margin: 0; color: #7f8c8d; font-size: 14px;">или нажмите для
+            выбора файла
+          </p>
+          <input
+            type="file"
+            id="importFileInput"
+            accept=".json"
+            style="display: none;"
+          >
+        </div>
+        <div class="hint">Импортированные изображения будут добавлены к
+          существующим
+        </div>
+      </div>
+
+      <div class="form-group">
+        <h4>Очистить все пользовательские изображения</h4>
+        <p>Внимание: это действие нельзя отменить!</p>
+        <button
+          onclick="clearAllCustomImages()"
+          class="btn btn-danger"
+          style="width: 100%;"
+        >
+          🗑️ Удалить все пользовательские изображения
+        </button>
+      </div>
+    </div>
+
+    <div class="modal-buttons">
+      <button
+        type="button"
+        class="btn btn-secondary"
+        onclick="closeManageImagesModal()"
+      >Закрыть
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Контекстное меню -->
+<div
+  id="contextMenu"
+  class="context-menu"
+>
+  <div
+    class="context-menu-item"
+    onclick="copyObject()"
+  ><span>📋</span> Копировать
+  </div>
+  <div
+    class="context-menu-item"
+    onclick="pasteObject()"
+  ><span>📄</span> Вставить
+  </div>
+  <div class="context-menu-divider"></div>
+  <div
+    class="context-menu-item"
+    onclick="duplicateObject()"
+  ><span>🔁</span> Дублировать
+  </div>
+  <div
+    class="context-menu-item"
+    onclick="bringObjectToFront()"
+  ><span>⬆️</span> На передний план
+  </div>
+  <div
+    class="context-menu-item"
+    onclick="sendObjectToBack()"
+  ><span>⬇️</span> На задний план
+  </div>
+  <div class="context-menu-divider"></div>
+  <div
+    class="context-menu-item"
+    onclick="deleteObject()"
+  ><span>🗑️</span> Удалить
+  </div>
+</div>
+
+<!-- Уведомления -->
+<div id="notificationContainer"></div>
+
+<script>
+  // ==================== ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ ====================
+  const canvas = new fabric.Canvas('fabric-canvas', {
+    backgroundColor: '#f8f9fa',
+    preserveObjectStacking: true,
+    selection: true,
+    selectionColor: 'rgba(79, 195, 247, 0.3)',
+    selectionBorderColor: '#4fc3f7',
+    selectionLineWidth: 2,
+    renderOnAddRemove: true
+  });
+
+  // Состояние редактора
+  let isDrawingLine = false;
+  let isContinuousLineMode = false;
+  let lineStartPoint = null;
+  let previewLine = null;
+  let isDragging = false;
+  let lastPosX, lastPosY;
+  let lastLineEndPoint = null;
+  const SNAP_RADIUS = 15;
+  let currentEditingLine = null;
+  let currentEditingImage = null;
+  let currentImageData = null;
+  let gridVisible = true;
+  let undoStack = [];
+  let redoStack = [];
+  let copiedObject = null;
+  let contextMenuVisible = false;
+  let autoSplitMode = true;
+
+  // Изображения
+  const defaultImages = [
+    {
+      id: 'fan1',
+      name: 'Вентилятор 1',
+      icon: '🌀',
+      path: 'https://cdn-icons-png.flaticon.com/512/3067/3067270.png',
+      type: 'fan',
+      description: 'Вентилятор тип 1'
+    },
+    {
+      id: 'fan2',
+      name: 'Вентилятор 2',
+      icon: '🌀',
+      path: 'https://cdn-icons-png.flaticon.com/512/3067/3067266.png',
+      type: 'fan',
+      description: 'Вентилятор тип 2'
+    },
+    {
+      id: 'fire',
+      name: 'Пожарный датчик',
+      icon: '🔥',
+      path: 'https://cdn-icons-png.flaticon.com/512/3067/3067260.png',
+      type: 'fire',
+      description: 'Датчик пожарной сигнализации'
+    },
+    {
+      id: 'valve',
+      name: 'Клапан',
+      icon: '🔧',
+      path: 'https://cdn-icons-png.flaticon.com/512/3067/3067256.png',
+      type: 'valve',
+      description: 'Запорный клапан'
+    },
+    {
+      id: 'pump',
+      name: 'Насос',
+      icon: '⚙️',
+      path: 'https://cdn-icons-png.flaticon.com/512/3067/3067266.png',
+      type: 'pump',
+      description: 'Циркуляционный насос'
+    },
+    {
+      id: 'sensor',
+      name: 'Датчик',
+      icon: '📡',
+      path: 'https://cdn-icons-png.flaticon.com/512/3067/3067260.png',
+      type: 'sensor',
+      description: 'Датчик температуры'
+    }
+  ];
+
+  let customImages = [];
+  let allImages = [...defaultImages];
+
+  // ==================== ИНИЦИАЛИЗАЦИЯ ====================
+  document.addEventListener('DOMContentLoaded', function () {
+    initializeCanvas();
+    loadCustomImages();
+    updateImageTools();
+    updateStatus();
+    console.log('🚀 Редактор технических чертежей загружен!');
+  });
+
+  function initializeCanvas() {
+    // Отрисовка сетки
+    drawGrid(20);
+
+    // Настройка обработчиков событий канваса
+    setupCanvasEvents();
+
+    // Настройка горячих клавиш
+    setupKeyboardShortcuts();
+
+    // Инициализация модальных окон
+    initializeModals();
+  }
+
+  // ==================== СЕТКА ====================
+  function drawGrid(gridSize = 20) {
+    // Удаляем старую сетку, если есть
+    const oldGrid = canvas.getObjects().filter(obj => obj.id === 'grid-group');
+    oldGrid.forEach(obj => canvas.remove(obj));
+
+    if (!gridVisible) return;
+
+    const width = canvas.width, height = canvas.height;
+    const gridLines = [];
+
+    for (let x = 0; x <= width; x += gridSize) {
+      gridLines.push(new fabric.Line([x, 0, x, height], {
+        stroke: 'rgba(224, 224, 224, 0.7)',
+        strokeWidth: 1,
+        selectable: false,
+        evented: false,
+        id: 'grid-line'
+      }));
+    }
+
+    for (let y = 0; y <= height; y += gridSize) {
+      gridLines.push(new fabric.Line([0, y, width, y], {
+        stroke: 'rgba(224, 224, 224, 0.7)',
+        strokeWidth: 1,
+        selectable: false,
+        evented: false,
+        id: 'grid-line'
+      }));
+    }
+
+    const gridGroup = new fabric.Group(gridLines, {
+      selectable: false,
+      evented: false,
+      hoverCursor: 'default',
+      id: 'grid-group'
+    });
+
+    canvas.add(gridGroup);
+    canvas.sendToBack(gridGroup);
+  }
+
+  function toggleGrid() {
+    gridVisible = !gridVisible;
+    const btn = document.getElementById('gridToggleBtn');
+
+    if (gridVisible) {
+      btn.innerHTML = '<span>🔲</span> Сетка (ВКЛ)';
+      showNotification('Сетка включена', 'success');
+    } else {
+      btn.innerHTML = '<span>🔲</span> Сетка (ВЫКЛ)';
+      showNotification('Сетка отключена', 'info');
+    }
+
+    drawGrid(20);
+    canvas.renderAll();
+  }
+
+  // ==================== АВТОРАЗБИВКА ====================
+  function toggleAutoSplitMode() {
+    autoSplitMode = !autoSplitMode;
+    const btn = document.getElementById('autoSplitBtn');
+
+    if (autoSplitMode) {
+      btn.innerHTML = '<span>⚡</span> Авторазбивка (ВКЛ)';
+      showNotification('Автоматическое разбиение линий включено', 'success');
+    } else {
+      btn.innerHTML = '<span>⚡</span> Авторазбивка (ВЫКЛ)';
+      showNotification('Автоматическое разбиение линий отключено', 'info');
+    }
+  }
+
+  // ==================== ИЗОБРАЖЕНИЯ ====================
+  function loadCustomImages() {
+    const saved = localStorage.getItem('customImages');
+    if (saved) {
+      try {
+        customImages = JSON.parse(saved);
+        allImages = [...defaultImages, ...customImages];
+        console.log(`Загружено ${customImages.length} пользовательских изображений`);
+      } catch (e) {
+        console.error('Ошибка загрузки пользовательских изображений:', e);
+        customImages = [];
+      }
+    }
+  }
+
+  function saveCustomImages() {
+    localStorage.setItem('customImages', JSON.stringify(customImages));
+  }
+
+  function updateImageTools() {
+    const grid = document.getElementById('imageToolsGrid');
+    if (!grid) return;
+
+    grid.innerHTML = '';
+
+    allImages.forEach(image => {
+      const button = document.createElement('button');
+      button.id = `${image.id}Btn`;
+      button.className = 'image-item';
+      button.innerHTML = `
+        <div style="font-size: 20px; margin-bottom: 5px;">${image.icon || '🖼️'}</div>
+        <div class="image-item-name">${image.name}</div>
+        ${image.id.startsWith('custom_') ? '<div class="image-item-type">П</div>' : ''}
+      `;
+
+      button.onclick = () => activateImagePlacementMode(image.id);
+
+      if (image.id.startsWith('custom_')) {
+        const actions = document.createElement('div');
+        actions.className = 'custom-image-actions';
+        actions.innerHTML = `
+          <button class="edit-btn" onclick="editCustomImage('${image.id}'); event.stopPropagation();">✏️</button>
+          <button class="delete-btn" onclick="deleteCustomImage('${image.id}'); event.stopPropagation();">🗑️</button>
+        `;
+        button.appendChild(actions);
+      }
+
+      grid.appendChild(button);
+    });
+  }
+
+  function activateImagePlacementMode(imageId) {
+    deactivateAllModes();
+
+    const image = allImages.find(img => img.id === imageId);
+    if (!image) {
+      showNotification('Изображение не найдено!', 'error');
+      return;
+    }
+
+    currentImageData = image;
+
+    // Убираем активный класс со всех кнопок
+    document.querySelectorAll('.image-item').forEach(btn => btn.classList.remove('active-mode'));
+
+    // Добавляем активный класс к выбранной кнопке
+    const currentBtn = document.getElementById(`${imageId}Btn`);
+    if (currentBtn) currentBtn.classList.add('active-mode');
+
+    canvas.defaultCursor = 'crosshair';
+    canvas.selection = false;
+
+    showNotification(`Режим добавления: ${image.name}. Shift+клик для размещения`, 'info');
+  }
+
+  // ==================== РАЗБИЕНИЕ ЛИНИЙ ПРИ РАЗМЕЩЕНИИ ИЗОБРАЖЕНИЙ ====================
+  function splitLinesAtImagePosition(image) {
+    const lines = canvas.getObjects().filter(obj =>
+      obj.type === 'line' && obj.id !== 'grid-line' && obj !== previewLine
+    );
+
+    let linesSplit = 0;
+    const intersectionInfo = [];
+    const IMAGE_PADDING = 5; // Отступ от края изображения
+
+    lines.forEach(line => {
+      // Получаем геометрию линии
+      const lineStart = {x: line.x1, y: line.y1};
+      const lineEnd = {x: line.x2, y: line.y2};
+
+      // Получаем bounding box изображения с небольшим отступом
+      const imgWidth = image.width * image.scaleX;
+      const imgHeight = image.height * image.scaleY;
+
+      // Координаты углов прямоугольника изображения с отступом
+      const rect = {
+        left: image.left - imgWidth / 2 - IMAGE_PADDING,
+        right: image.left + imgWidth / 2 + IMAGE_PADDING,
+        top: image.top - imgHeight / 2 - IMAGE_PADDING,
+        bottom: image.top + imgHeight / 2 + IMAGE_PADDING
+      };
+
+      // Проверяем пересечение линии с прямоугольником изображения
+      const intersection = getLineRectIntersection(lineStart, lineEnd, rect);
+
+      if (intersection) {
+        // Находим ближайшую точку пересечения к центру линии
+        const closestPoint = findClosestIntersectionPoint(lineStart, lineEnd, intersection.points);
+
+        if (closestPoint) {
+          // Определяем, каким концом линия подходит к точке пересечения
+          const distanceToStart = Math.sqrt(
+            Math.pow(closestPoint.x - lineStart.x, 2) +
+            Math.pow(closestPoint.y - lineStart.y, 2)
+          );
+          const distanceToEnd = Math.sqrt(
+            Math.pow(closestPoint.x - lineEnd.x, 2) +
+            Math.pow(closestPoint.y - lineEnd.y, 2)
+          );
+
+          const approachingFromStart = distanceToStart < distanceToEnd;
+          const endType = approachingFromStart ? 'end' : 'start';
+          const approachingFrom = approachingFromStart ? 'start' : 'end';
+
+          // Вычисляем длины сегментов
+          const lineLength = Math.sqrt(
+            Math.pow(lineEnd.x - lineStart.x, 2) +
+            Math.pow(lineEnd.y - lineStart.y, 2)
+          );
+          const segment1Ratio = distanceToStart / lineLength;
+          const segment2Ratio = 1 - segment1Ratio;
+
+          // Создаем первый сегмент
+          const segment1 = new fabric.Line([
+            lineStart.x, lineStart.y,
+            closestPoint.x, closestPoint.y
+          ], {
+            stroke: line.stroke || '#2a9d8f',
+            strokeWidth: line.strokeWidth || 3,
+            strokeDashArray: line.strokeDashArray,
+            fill: false,
+            strokeLineCap: 'round',
+            hasControls: true,
+            hasBorders: true,
+            lockRotation: false,
+            selectable: true,
+            properties: line.properties ? {
+              ...line.properties,
+              name: `${line.properties.name || 'Линия'} (сегмент 1)`,
+              length: distanceToStart,
+              connectsToImage: {
+                imageId: image.properties?.imageId || image.id,
+                imageName: image.properties?.name || 'Объект',
+                atPoint: {x: closestPoint.x, y: closestPoint.y},
+                endType: endType,
+                approachingFrom: approachingFrom,
+                side: intersection.side
+              }
+            } : {
+              name: 'Сегмент 1',
+              length: distanceToStart,
+              connectsToImage: {
+                imageId: image.properties?.imageId || image.id,
+                imageName: image.properties?.name || 'Объект',
+                atPoint: {x: closestPoint.x, y: closestPoint.y},
+                endType: endType,
+                approachingFrom: approachingFrom,
+                side: intersection.side
+              }
+            }
+          });
+
+          // Создаем второй сегмент
+          const segment2 = new fabric.Line([
+            closestPoint.x, closestPoint.y,
+            lineEnd.x, lineEnd.y
+          ], {
+            stroke: line.stroke || '#2a9d8f',
+            strokeWidth: line.strokeWidth || 3,
+            strokeDashArray: line.strokeDashArray,
+            fill: false,
+            strokeLineCap: 'round',
+            hasControls: true,
+            hasBorders: true,
+            lockRotation: false,
+            selectable: true,
+            properties: line.properties ? {
+              ...line.properties,
+              name: `${line.properties.name || 'Линия'} (сегмент 2)`,
+              length: distanceToEnd,
+              connectsToImage: {
+                imageId: image.properties?.imageId || image.id,
+                imageName: image.properties?.name || 'Объект',
+                atPoint: {x: closestPoint.x, y: closestPoint.y},
+                endType: endType === 'start' ? 'end' : 'start',
+                approachingFrom: approachingFrom === 'start' ? 'end' : 'start',
+                side: intersection.side
+              }
+            } : {
+              name: 'Сегмент 2',
+              length: distanceToEnd,
+              connectsToImage: {
+                imageId: image.properties?.imageId || image.id,
+                imageName: image.properties?.name || 'Объект',
+                atPoint: {x: closestPoint.x, y: closestPoint.y},
+                endType: endType === 'start' ? 'end' : 'start',
+                approachingFrom: approachingFrom === 'start' ? 'end' : 'start',
+                side: intersection.side
+              }
+            }
+          });
+
+          // Добавляем визуальный маркер точки соединения
+          const connectionPoint = new fabric.Circle({
+            left: closestPoint.x - 6,
+            top: closestPoint.y - 6,
+            radius: 6,
+            fill: approachingFromStart ? '#2ecc71' : '#e74c3c',
+            stroke: approachingFromStart ? '#27ae60' : '#c0392b',
+            strokeWidth: 2,
+            selectable: false,
+            hasControls: false,
+            hasBorders: false,
+            evented: false,
+            originX: 'center',
+            originY: 'center',
+            id: 'connection-point'
+          });
+
+          // Добавляем текст с информацией о направлении
+          const directionText = new fabric.Text(approachingFromStart ? '→' : '←', {
+            left: closestPoint.x + 10,
+            top: closestPoint.y - 10,
+            fontSize: 16,
+            fill: approachingFromStart ? '#27ae60' : '#c0392b',
+            fontWeight: 'bold',
+            selectable: false,
+            evented: false,
+            id: 'connection-point',
+            textBackgroundColor: 'rgba(255, 255, 255, 0.8)',
+            padding: 2
+          });
+
+          // Сохраняем информацию о разбиении
+          intersectionInfo.push({
+            originalLine: line,
+            segments: [segment1, segment2],
+            markers: [connectionPoint, directionText],
+            approachingFromStart: approachingFromStart,
+            imageId: image.properties?.imageId || image.id,
+            splitPoint: closestPoint
+          });
+
+          linesSplit++;
+        }
+      }
+    });
+
+    // Удаляем исходные линии и добавляем новые сегменты
+    if (intersectionInfo.length > 0) {
+      saveToUndoStack();
+
+      intersectionInfo.forEach(info => {
+        canvas.remove(info.originalLine);
+        canvas.add(info.segments[0]);
+        canvas.add(info.segments[1]);
+        info.markers.forEach(marker => {
+          canvas.add(marker);
+          canvas.sendToBack(marker);
+        });
+      });
+
+      showNotification(`Разбито ${linesSplit} линий на ${linesSplit * 2} сегментов`, 'success');
+      canvas.renderAll();
+      updatePropertiesPanel();
+    }
+
+    return intersectionInfo;
+  }
+
+  // Функция для получения пересечения линии с прямоугольником
+  function getLineRectIntersection(lineStart, lineEnd, rect) {
+    const sides = [
+      { // Верхняя сторона
+        p1: {x: rect.left, y: rect.top},
+        p2: {x: rect.right, y: rect.top},
+        side: 'top'
+      },
+      { // Правая сторона
+        p1: {x: rect.right, y: rect.top},
+        p2: {x: rect.right, y: rect.bottom},
+        side: 'right'
+      },
+      { // Нижняя сторона
+        p1: {x: rect.right, y: rect.bottom},
+        p2: {x: rect.left, y: rect.bottom},
+        side: 'bottom'
+      },
+      { // Левая сторона
+        p1: {x: rect.left, y: rect.bottom},
+        p2: {x: rect.left, y: rect.top},
+        side: 'left'
+      }
+    ];
+
+    const intersectionPoints = [];
+
+    sides.forEach(side => {
+      const intersection = lineIntersection(
+        {x1: lineStart.x, y1: lineStart.y, x2: lineEnd.x, y2: lineEnd.y},
+        {x1: side.p1.x, y1: side.p1.y, x2: side.p2.x, y2: side.p2.y}
+      );
+
+      if (intersection) {
+        intersectionPoints.push({
+          x: intersection.x,
+          y: intersection.y,
+          side: side.side
+        });
+      }
+    });
+
+    if (intersectionPoints.length > 0) {
+      return {
+        points: intersectionPoints,
+        lineStart: lineStart,
+        lineEnd: lineEnd
+      };
+    }
+
+    return null;
+  }
+
+  // Функция для нахождения ближайшей точки пересечения
+  function findClosestIntersectionPoint(lineStart, lineEnd, points) {
+    // Находим середину линии
+    const midPoint = {
+      x: (lineStart.x + lineEnd.x) / 2,
+      y: (lineStart.y + lineEnd.y) / 2
+    };
+
+    let closestPoint = null;
+    let minDistance = Infinity;
+
+    points.forEach(point => {
+      const distance = Math.sqrt(
+        Math.pow(point.x - midPoint.x, 2) +
+        Math.pow(point.y - midPoint.y, 2)
+      );
+
+      if (distance < minDistance) {
+        minDistance = distance;
+        closestPoint = point;
+      }
+    });
+
+    return closestPoint;
+  }
+
+  // Функция для разбиения линий по выбранному изображению
+  function splitLinesAtSelectedImage() {
+    const activeObject = canvas.getActiveObject();
+
+    if (!activeObject || activeObject.type !== 'image') {
+      showNotification('Выберите изображение для разбиения линий!', 'error');
+      return;
+    }
+
+    const result = splitLinesAtImagePosition(activeObject);
+
+    if (result.length === 0) {
+      showNotification('Нет линий для разбиения на этом изображении', 'info');
+    }
+  }
+
+  function addImageAtPosition(x, y) {
+    if (!currentImageData) {
+      showNotification('Сначала выберите изображение!', 'error');
+      return;
+    }
+
+    const MAX_SIZE = 40;
+
+    fabric.Image.fromURL(currentImageData.path, function (img) {
+      // Проверяем, загрузилось ли изображение
+      if (!img.width || !img.height) {
+        showNotification('Ошибка загрузки изображения!', 'error');
+        return;
+      }
+
+      // Масштабирование до максимального размера
+      const originalWidth = img.width || 100;
+      const originalHeight = img.height || 100;
+      const scale = Math.min(MAX_SIZE / originalWidth, MAX_SIZE / originalHeight, 1);
+
+      const finalWidth = originalWidth * scale;
+      const finalHeight = originalHeight * scale;
+
+      // Создаем свойства объекта
+      const properties = {
+        name: currentImageData.name,
+        type: currentImageData.type || 'default',
+        imageId: currentImageData.id,
+        imagePath: currentImageData.path,
+        width: finalWidth,
+        height: finalHeight,
+        description: currentImageData.description || '',
+        ...currentImageData.properties
+      };
+
+      img.set({
+        left: x,
+        top: y,
+        scaleX: scale,
+        scaleY: scale,
+        hasControls: true,
+        hasBorders: true,
+        lockUniScaling: false,
+        selectable: true,
+        originX: 'center',
+        originY: 'center',
+        properties: properties
+      });
+
+      // Привязка к сетке
+      const gridSize = 20;
+      img.set({
+        left: snapToGrid(img.left, gridSize),
+        top: snapToGrid(img.top, gridSize)
+      });
+
+      saveToUndoStack();
+      canvas.add(img);
+      canvas.setActiveObject(img);
+
+      // Автоматически разбиваем линии, если включен режим авторазбивки
+      if (autoSplitMode) {
+        setTimeout(() => {
+          const splitResult = splitLinesAtImagePosition(img);
+          if (splitResult.length > 0) {
+            showNotification(`Автоматически разбито ${splitResult.length} линий`, 'success');
+          }
+        }, 50);
+      }
+
+      updatePropertiesPanel();
+      updateStatus();
+
+      showNotification(`${currentImageData.name} добавлен`, 'success');
+
+    }, {
+      crossOrigin: 'anonymous'
+    }, function (error) {
+      console.error('Ошибка загрузки изображения:', error);
+      showNotification('Ошибка загрузки изображения!', 'error');
+    });
+  }
+
+  // ==================== РИСОВАНИЕ ЛИНИЙ ====================
+  function activateLineDrawing() {
+    deactivateAllModes();
+    isDrawingLine = true;
+    canvas.defaultCursor = 'crosshair';
+    canvas.selection = false;
+    canvas.forEachObject(obj => obj.selectable = false);
+
+    document.getElementById('lineDrawingBtn').classList.add('active-mode');
+
+    const modeText = isContinuousLineMode
+      ? 'Режим рисования линии (непрерывный). Кликните для начала, затем для конца.'
+      : 'Режим рисования линии. Кликните для начала, затем для конца.';
+
+    showNotification(modeText + ' ESC для отмены.', 'info');
+  }
+
+  function toggleContinuousMode() {
+    isContinuousLineMode = !isContinuousLineMode;
+    const btn = document.getElementById('continuousModeBtn');
+
+    if (isContinuousLineMode) {
+      btn.innerHTML = '<span>🔗</span> Непрерывный (ВКЛ)';
+      showNotification('Непрерывный режим ВКЛЮЧЕН', 'success');
+    } else {
+      btn.innerHTML = '<span>🔗</span> Непрерывный (ВЫКЛ)';
+      showNotification('Непрерывный режим ВЫКЛЮЧЕН', 'info');
+    }
+  }
+
+  // ==================== ПЕРЕСЕЧЕНИЯ ЛИНИЙ ====================
+  function lineIntersection(line1, line2) {
+    if (line1 === line2) return null;
+
+    const x1 = line1.x1, y1 = line1.y1;
+    const x2 = line1.x2, y2 = line1.y2;
+    const x3 = line2.x1, y3 = line2.y1;
+    const x4 = line2.x2, y4 = line2.y2;
+
+    const denominator = (y4 - y3) * (x2 - x1) - (x4 - x3) * (y2 - y1);
+
+    if (Math.abs(denominator) < 0.000001) {
+      return null;
+    }
+
+    const t = ((x4 - x3) * (y1 - y3) - (y4 - y3) * (x1 - x3)) / denominator;
+    const u = ((x2 - x1) * (y1 - y3) - (y2 - y1) * (x1 - x3)) / denominator;
+
+    if (t >= 0 && t <= 1 && u >= 0 && u <= 1) {
+      const x = x1 + t * (x2 - x1);
+      const y = y1 + t * (y2 - y1);
+
+      const epsilon = 0.05;
+      if (t < epsilon || t > 1 - epsilon || u < epsilon || u > 1 - epsilon) {
+        return null;
+      }
+
+      return {
+        x: Math.round(x * 100) / 100,
+        y: Math.round(y * 100) / 100,
+        t: t,
+        line1: line1,
+        line2: line2
+      };
+    }
+
+    return null;
+  }
+
+  function findAllIntersections() {
+    const lines = canvas.getObjects().filter(obj =>
+      obj.type === 'line' && obj.id !== 'grid-line' && obj !== previewLine
+    );
+
+    const intersections = [];
+
+    for (let i = 0; i < lines.length; i++) {
+      for (let j = i + 1; j < lines.length; j++) {
+        const intersection = lineIntersection(lines[i], lines[j]);
+        if (intersection) {
+          intersections.push(intersection);
+        }
+      }
+    }
+
+    return intersections;
+  }
+
+  function showIntersectionPoints() {
+    clearIntersectionPoints();
+
+    const intersections = findAllIntersections();
+
+    intersections.forEach((inter, index) => {
+      const circle = new fabric.Circle({
+        left: inter.x - 8,
+        top: inter.y - 8,
+        radius: 8,
+        fill: '#e74c3c',
+        stroke: '#c0392b',
+        strokeWidth: 2,
+        selectable: false,
+        hasControls: false,
+        hasBorders: false,
+        evented: false,
+        originX: 'center',
+        originY: 'center',
+        id: 'intersection-point'
+      });
+
+      const text = new fabric.Text((index + 1).toString(), {
+        left: inter.x + 12,
+        top: inter.y - 12,
+        fontSize: 14,
+        fill: '#2c3e50',
+        fontWeight: 'bold',
+        selectable: false,
+        evented: false,
+        id: 'intersection-point',
+        textBackgroundColor: 'rgba(255, 255, 255, 0.8)',
+        padding: 3
+      });
+
+      canvas.add(circle);
+      canvas.add(text);
+      canvas.sendToBack(circle);
+      canvas.sendToBack(text);
+    });
+
+    canvas.renderAll();
+    return intersections;
+  }
+
+  function splitLinesAtIntersections() {
+    const intersections = findAllIntersections();
+
+    if (intersections.length === 0) {
+      showNotification('Пересечений не найдено!', 'info');
+      return;
+    }
+
+    showIntersectionPoints();
+
+    const linesToSplit = new Map();
+
+    intersections.forEach(inter => {
+      if (!linesToSplit.has(inter.line1)) {
+        linesToSplit.set(inter.line1, []);
+      }
+
+      const existingPoint = linesToSplit.get(inter.line1).find(p =>
+        Math.abs(p.x - inter.x) < 1 && Math.abs(p.y - inter.y) < 1
+      );
+
+      if (!existingPoint) {
+        linesToSplit.get(inter.line1).push({
+          x: inter.x,
+          y: inter.y,
+          t: inter.t
+        });
+      }
+
+      if (!linesToSplit.has(inter.line2)) {
+        linesToSplit.set(inter.line2, []);
+      }
+
+      const existingPoint2 = linesToSplit.get(inter.line2).find(p =>
+        Math.abs(p.x - inter.x) < 1 && Math.abs(p.y - inter.y) < 1
+      );
+
+      if (!existingPoint2) {
+        linesToSplit.get(inter.line2).push({
+          x: inter.x,
+          y: inter.y,
+          t: inter.t
+        });
+      }
+    });
+
+    const newLines = [];
+
+    linesToSplit.forEach((points, line) => {
+      const startPoint = {x: line.x1, y: line.y1, t: 0};
+      const endPoint = {x: line.x2, y: line.y2, t: 1};
+      const allPoints = [startPoint, ...points, endPoint];
+      allPoints.sort((a, b) => a.t - b.t);
+
+      for (let i = 0; i < allPoints.length - 1; i++) {
+        const p1 = allPoints[i];
+        const p2 = allPoints[i + 1];
+        const dx = p2.x - p1.x;
+        const dy = p2.y - p1.y;
+        const length = Math.sqrt(dx * dx + dy * dy);
+
+        if (length > 2) {
+          const totalLength = Math.sqrt(
+            Math.pow(line.x2 - line.x1, 2) + Math.pow(line.y2 - line.y1, 2)
+          );
+          const lengthRatio = length / totalLength;
+
+          const segment = new fabric.Line([
+            p1.x, p1.y, p2.x, p2.y
+          ], {
+            stroke: line.stroke || '#2a9d8f',
+            strokeWidth: line.strokeWidth || 3,
+            strokeDashArray: line.strokeDashArray,
+            fill: false,
+            strokeLineCap: 'round',
+            hasControls: true,
+            hasBorders: true,
+            lockRotation: false,
+            selectable: true,
+            properties: line.properties ? {
+              name: `${line.properties.name || 'Линия'} (сегмент ${i + 1})`,
+              L: line.properties.L ? line.properties.L * lengthRatio : 0.5 * lengthRatio,
+              I: line.properties.I ? line.properties.I * lengthRatio : 0.015 * lengthRatio,
+              K: line.properties.K ? line.properties.K * lengthRatio : 10 * lengthRatio,
+              W: line.properties.W ? line.properties.W * lengthRatio : 1.0 * lengthRatio,
+              length: length
+            } : {
+              name: `Сегмент ${i + 1}`,
+              L: 0.5 * lengthRatio,
+              I: 0.015 * lengthRatio,
+              K: 10 * lengthRatio,
+              W: 1.0 * lengthRatio,
+              length: length
+            }
+          });
+
+          newLines.push(segment);
+        }
+      }
+    });
+
+    linesToSplit.forEach((points, line) => {
+      canvas.remove(line);
+    });
+
+    newLines.forEach(segment => {
+      canvas.add(segment);
+    });
+
+    clearIntersectionPoints();
+
+    showNotification(`Разбито ${linesToSplit.size} линий на ${newLines.length} сегментов`, 'success');
+    canvas.renderAll();
+    updatePropertiesPanel();
+  }
+
+  function clearIntersectionPoints() {
+    const objects = canvas.getObjects();
+    for (let i = objects.length - 1; i >= 0; i--) {
+      if (objects[i].id === 'intersection-point' || objects[i].id === 'connection-point') {
+        canvas.remove(objects[i]);
+      }
+    }
+    canvas.renderAll();
+  }
+
+  function findIntersectionsOnly() {
+    clearIntersectionPoints();
+    const intersections = showIntersectionPoints();
+
+    if (intersections.length === 0) {
+      showNotification('Пересечений не найдено!', 'info');
+    } else {
+      showNotification(`Найдено ${intersections.length} пересечений`, 'success');
+    }
+
+    return intersections;
+  }
+
+  // ==================== ОБРАБОТЧИКИ СОБЫТИЙ КАНВАСА ====================
+  function setupCanvasEvents() {
+    // События мыши
+    canvas.on('mouse:down', function (options) {
+      const pointer = canvas.getPointer(options.e);
+      const gridSize = 20;
+
+      // Добавление изображения по Shift+клик
+      if (options.e.shiftKey && currentImageData) {
+        addImageAtPosition(pointer.x, pointer.y);
+        return;
+      }
+
+      // Рисование линии
+      if (isDrawingLine) {
+        let snappedX, snappedY;
+
+        if (isContinuousLineMode && lastLineEndPoint) {
+          const distanceToLastPoint = Math.sqrt(
+            Math.pow(pointer.x - lastLineEndPoint.x, 2) +
+            Math.pow(pointer.y - lastLineEndPoint.y, 2)
+          );
+
+          if (distanceToLastPoint < SNAP_RADIUS) {
+            snappedX = lastLineEndPoint.x;
+            snappedY = lastLineEndPoint.y;
+          } else {
+            snappedX = snapToGrid(pointer.x, gridSize);
+            snappedY = snapToGrid(pointer.y, gridSize);
+          }
+        } else {
+          snappedX = snapToGrid(pointer.x, gridSize);
+          snappedY = snapToGrid(pointer.y, gridSize);
+        }
+
+        if (!lineStartPoint) {
+          lineStartPoint = {x: snappedX, y: snappedY};
+          previewLine = new fabric.Line([
+            lineStartPoint.x, lineStartPoint.y, snappedX, snappedY
+          ], {
+            stroke: '#2a9d8f',
+            strokeWidth: 3,
+            strokeDashArray: [5, 5],
+            selectable: false,
+            evented: false
+          });
+          canvas.add(previewLine);
+        } else {
+          const length = Math.sqrt(
+            Math.pow(snappedX - lineStartPoint.x, 2) +
+            Math.pow(snappedY - lineStartPoint.y, 2)
+          );
+
+          const lineType = document.getElementById('propertyLineType')?.value || 'solid';
+          let strokeDashArray;
+          switch (lineType) {
+            case 'dashed':
+              strokeDashArray = [5, 5];
+              break;
+            case 'dotted':
+              strokeDashArray = [2, 2];
+              break;
+            default:
+              strokeDashArray = null;
+          }
+
+          const finalLine = new fabric.Line([
+            lineStartPoint.x, lineStartPoint.y, snappedX, snappedY
+          ], {
+            stroke: document.getElementById('propertyColor')?.value || '#2a9d8f',
+            strokeWidth: parseInt(document.getElementById('propertyWidth')?.value || 2),
+            strokeDashArray: strokeDashArray,
+            fill: false,
+            strokeLineCap: 'round',
+            hasControls: true,
+            hasBorders: true,
+            lockRotation: false,
+            properties: {
+              name: document.getElementById('propertyName')?.value || `Линия ${canvas.getObjects().filter(o => o.type === 'line' && o.id !== 'grid-line').length + 1}`,
+              L: parseFloat(document.getElementById('propertyL')?.value) || 0.5,
+              I: parseFloat(document.getElementById('propertyI')?.value) || 0.015,
+              K: parseFloat(document.getElementById('propertyK')?.value) || 10,
+              W: parseFloat(document.getElementById('propertyW')?.value) || 1.0,
+              length: length
+            }
+          });
+
+          saveToUndoStack();
+          canvas.add(finalLine);
+          canvas.setActiveObject(finalLine);
+          updatePropertiesPanel();
+
+          lastLineEndPoint = {x: snappedX, y: snappedY};
+
+          if (isContinuousLineMode) {
+            lineStartPoint = {x: snappedX, y: snappedY};
+            if (previewLine) {
+              previewLine.set({
+                x1: lineStartPoint.x,
+                y1: lineStartPoint.y,
+                x2: snappedX,
+                y2: snappedY
+              });
+            }
+          } else {
+            deactivateAllModes();
+          }
+        }
+        return;
+      }
+
+      // Перемещение холста по Alt
+      if (options.e.altKey) {
+        isDragging = true;
+        lastPosX = pointer.x;
+        lastPosY = pointer.y;
+        canvas.defaultCursor = 'grabbing';
+        return;
+      }
+    });
+
+    canvas.on('mouse:move', function (options) {
+      const pointer = canvas.getPointer(options.e);
+      updateStatus(pointer.x, pointer.y);
+
+      // Обновление превью линии при рисовании
+      if (isDrawingLine && lineStartPoint && previewLine) {
+        const snappedX = snapToGrid(pointer.x, 20);
+        const snappedY = snapToGrid(pointer.y, 20);
+        previewLine.set({x2: snappedX, y2: snappedY});
+        previewLine.setCoords();
+        canvas.requestRenderAll();
+      }
+
+      // Перемещение холста
+      if (isDragging && options.e.altKey) {
+        const deltaX = pointer.x - lastPosX;
+        const deltaY = pointer.y - lastPosY;
+        canvas.relativePan(new fabric.Point(deltaX, deltaY));
+        lastPosX = pointer.x;
+        lastPosY = pointer.y;
+      }
+    });
+
+    canvas.on('mouse:up', function () {
+      if (isDragging) {
+        isDragging = false;
+        canvas.defaultCursor = 'default';
+      }
+    });
+
+    // Контекстное меню (правая кнопка мыши)
+    canvas.on('mouse:down', function (options) {
+      if (options.e.button === 2) { // Правая кнопка мыши
+        const pointer = canvas.getPointer(options.e);
+        const activeObject = canvas.getActiveObject();
+
+        if (activeObject) {
+          showContextMenu(pointer.x, pointer.y);
+        }
+        options.e.preventDefault();
+      }
+    });
+
+    // Выбор объектов
+    canvas.on('selection:created', updatePropertiesPanel);
+    canvas.on('selection:updated', updatePropertiesPanel);
+    canvas.on('selection:cleared', updatePropertiesPanel);
+
+    // Привязка к сетке при перемещении и масштабировании
+    canvas.on('object:moving', function (options) {
+      const obj = options.target;
+      const gridSize = 20;
+      obj.set({
+        left: snapToGrid(obj.left, gridSize),
+        top: snapToGrid(obj.top, gridSize)
+      });
+      obj.setCoords();
+    });
+
+    canvas.on('object:scaling', function (options) {
+      const obj = options.target;
+      const gridSize = 20;
+
+      if (obj.type === 'line') {
+        const newX2 = snapToGrid(obj.x2 * obj.scaleX, gridSize);
+        const newY2 = snapToGrid(obj.y2 * obj.scaleY, gridSize);
+        obj.set({
+          x2: newX2,
+          y2: newY2,
+          scaleX: 1,
+          scaleY: 1
+        });
+
+        if (obj.properties) {
+          const length = Math.sqrt(Math.pow(newX2 - obj.x1, 2) + Math.pow(newY2 - obj.y1, 2));
+          obj.properties.length = length;
+        }
+      } else if (obj.type === 'image') {
+        const minSize = 10;
+        const newWidth = Math.max(snapToGrid(obj.width * obj.scaleX, gridSize), minSize);
+        const newHeight = Math.max(snapToGrid(obj.height * obj.scaleY, gridSize), minSize);
+
+        obj.set({
+          scaleX: newWidth / obj.width,
+          scaleY: newHeight / obj.height
+        });
+
+        if (obj.properties) {
+          obj.properties.width = newWidth;
+          obj.properties.height = newHeight;
+        }
+      }
+      obj.setCoords();
+    });
+  }
+
+  // ==================== ГОРЯЧИЕ КЛАВИШИ ====================
+  function setupKeyboardShortcuts() {
+    document.addEventListener('keydown', function (event) {
+      // ESC - отмена
+      if (event.key === 'Escape') {
+        deactivateAllModes();
+        hideContextMenu();
+      }
+
+      // Delete - удаление
+      if (event.key === 'Delete' || event.key === 'Backspace') {
+        const activeObject = canvas.getActiveObject();
+        if (activeObject) {
+          saveToUndoStack();
+          canvas.remove(activeObject);
+          updatePropertiesPanel();
+          updateStatus();
+          showNotification('Объект удален', 'info');
+        }
+      }
+
+      // Сохранение и загрузка
+      if (event.ctrlKey || event.metaKey) {
+        if (event.key === 's') {
+          event.preventDefault();
+          saveDrawing();
+        }
+        if (event.key === 'o') {
+          event.preventDefault();
+          loadDrawing();
+        }
+        if (event.key === 'z') {
+          event.preventDefault();
+          if (event.shiftKey) {
+            redoAction();
+          } else {
+            undoAction();
+          }
+        }
+        if (event.key === 'y') {
+          event.preventDefault();
+          redoAction();
+        }
+        if (event.shiftKey && event.key === 'S') {
+          event.preventDefault();
+          splitLinesAtIntersections();
+        }
+        if (event.key === 'g') {
+          event.preventDefault();
+          if (event.shiftKey) {
+            ungroupObjects();
+          } else {
+            groupObjects();
+          }
+        }
+      }
+
+      // Быстрые клавиши
+      if (!event.ctrlKey && !event.metaKey) {
+        switch (event.key.toLowerCase()) {
+          case 'l':
+            event.preventDefault();
+            activateLineDrawing();
+            break;
+          case 'i':
+            event.preventDefault();
+            findIntersectionsOnly();
+            break;
+          case 'n':
+            event.preventDefault();
+            showAddImageModal();
+            break;
+          case 'g':
+            event.preventDefault();
+            toggleGrid();
+            break;
+          case 'c':
+            if (event.shiftKey) {
+              event.preventDefault();
+              toggleContinuousMode();
+            }
+            break;
+          case 'a':
+            event.preventDefault();
+            toggleAutoSplitMode();
+            break;
+          case 'o':
+            event.preventDefault();
+            splitLinesAtSelectedImage();
+            break;
+        }
+      }
+
+      // Цифры для быстрого выбора изображений (1-6)
+      if (event.key >= '1' && event.key <= '6') {
+        const index = parseInt(event.key) - 1;
+        if (index < allImages.length) {
+          activateImagePlacementMode(allImages[index].id);
+        }
+      }
+    });
+
+    // Закрытие контекстного меню при клике вне его
+    document.addEventListener('click', hideContextMenu);
+  }
+
+  // ==================== ИНИЦИАЛИЗАЦИЯ МОДАЛЬНЫХ ОКОН ====================
+  function initializeModals() {
+    // Настройка загрузки файлов
+    const dropArea = document.getElementById('dropArea');
+    const fileInput = document.getElementById('fileInput');
+
+    if (dropArea && fileInput) {
+      dropArea.addEventListener('click', () => fileInput.click());
+
+      dropArea.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        dropArea.classList.add('drag-over');
+      });
+
+      dropArea.addEventListener('dragleave', () => {
+        dropArea.classList.remove('drag-over');
+      });
+
+      dropArea.addEventListener('drop', (e) => {
+        e.preventDefault();
+        dropArea.classList.remove('drag-over');
+
+        if (e.dataTransfer.files.length) {
+          fileInput.files = e.dataTransfer.files;
+          handleFileUpload(fileInput.files[0]);
+        }
+      });
+
+      fileInput.addEventListener('change', (e) => {
+        if (e.target.files.length) {
+          handleFileUpload(e.target.files[0]);
+        }
+      });
+    }
+
+    // Настройка импорта изображений
+    const importDropArea = document.querySelector('#importExportTab div[style*="dashed"]');
+    const importFileInput = document.getElementById('importFileInput');
+
+    if (importDropArea && importFileInput) {
+      importDropArea.addEventListener('click', () => importFileInput.click());
+
+      importFileInput.addEventListener('change', (e) => {
+        if (e.target.files.length) {
+          importCustomImages(e.target.files[0]);
+        }
+      });
+    }
+
+    // Настройка отправки форм
+    document.getElementById('linePropertiesForm')?.addEventListener('submit', function (e) {
+      e.preventDefault();
+      applyLineProperties();
+    });
+
+    document.getElementById('imagePropertiesForm')?.addEventListener('submit', function (e) {
+      e.preventDefault();
+      applyImageProperties();
+    });
+
+    document.getElementById('addImageForm')?.addEventListener('submit', function (e) {
+      e.preventDefault();
+      addNewImage();
+    });
+  }
+
+  // ==================== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ====================
+  function snapToGrid(value, gridSize = 20) {
+    return Math.round(value / gridSize) * gridSize;
+  }
+
+  function deactivateAllModes() {
+    if (isDrawingLine) {
+      isDrawingLine = false;
+      document.getElementById('lineDrawingBtn').classList.remove('active-mode');
+      if (previewLine) {
+        canvas.remove(previewLine);
+        previewLine = null;
+      }
+      lineStartPoint = null;
+      lastLineEndPoint = null;
+    }
+
+    if (currentImageData) {
+      document.querySelectorAll('.image-item').forEach(btn => btn.classList.remove('active-mode'));
+      currentImageData = null;
+    }
+
+    canvas.defaultCursor = 'default';
+    canvas.selection = true;
+    canvas.forEachObject(obj => {
+      if (obj.id !== 'grid-group') {
+        obj.selectable = true;
+      }
+    });
+
+    updateStatus();
+  }
+
+  function updateStatus(x, y) {
+    const count = canvas.getObjects().filter(obj =>
+      obj.id !== 'grid-group' && obj.id !== 'grid-line'
+    ).length;
+
+    let statusText = `<strong>Объектов:</strong> ${count}`;
+
+    if (x !== undefined && y !== undefined) {
+      statusText += ` | <strong>Курсор:</strong> ${Math.round(x)}, ${Math.round(y)}px`;
+    }
+
+    const activeObj = canvas.getActiveObject();
+    if (activeObj) {
+      statusText += ` | <strong>Выбран:</strong> ${activeObj.type}`;
+      if (activeObj.type === 'line') {
+        const length = Math.sqrt(
+          Math.pow(activeObj.x2 - activeObj.x1, 2) +
+          Math.pow(activeObj.y2 - activeObj.y1, 2)
+        );
+        statusText += ` (${Math.round(length)}px)`;
+      } else if (activeObj.type === 'image') {
+        const props = activeObj.properties || {};
+        statusText += ` (${props.name || 'Изображение'})`;
+      }
+    }
+
+    if (isContinuousLineMode) {
+      statusText += ' | 🔗 <strong>Непрерывный режим</strong>';
+    }
+
+    if (autoSplitMode) {
+      statusText += ' | ⚡ <strong>Авторазбивка</strong>';
+    }
+
+    document.getElementById('status').innerHTML = statusText;
+  }
+
+  // ==================== СВОЙСТВА ОБЪЕКТОВ ====================
+  function updatePropertiesPanel() {
+    const activeObj = canvas.getActiveObject();
+    const propsContent = document.getElementById('props-content');
+
+    if (!activeObj) {
+      propsContent.innerHTML = `
+        <p style="color: #7f8c8d; font-style: italic; text-align: center; padding: 20px;">
+          Выберите объект на чертеже для редактирования свойств
+        </p>
+      `;
+      return;
+    }
+
+    let content = `
+      <div class="property-group">
+        <h4>📄 Основные свойства</h4>
+        <div class="property-row">
+          <div class="property-label">Тип:</div>
+          <div class="property-value"><strong>${activeObj.type}</strong></div>
+        </div>
+        <div class="property-row">
+          <div class="property-label">Позиция X:</div>
+          <div class="property-value">${Math.round(activeObj.left || activeObj.x1 || 0)}px</div>
+        </div>
+        <div class="property-row">
+          <div class="property-label">Позиция Y:</div>
+          <div class="property-value">${Math.round(activeObj.top || activeObj.y1 || 0)}px</div>
+        </div>
+    `;
+
+    if (activeObj.type === 'line') {
+      const length = Math.sqrt(
+        Math.pow(activeObj.x2 - activeObj.x1, 2) +
+        Math.pow(activeObj.y2 - activeObj.y1, 2)
+      );
+      content += `
+        <div class="property-row">
+          <div class="property-label">Длина:</div>
+          <div class="property-value">${Math.round(length)}px</div>
+        </div>
+      `;
+
+      if (activeObj.properties) {
+        content += `
+          <div class="property-group" style="border-left-color: #2a9d8f;">
+            <h4>📊 Технические параметры</h4>
+            <div class="property-row">
+              <div class="property-label">Название:</div>
+              <div class="property-value">${activeObj.properties.name || 'Без названия'}</div>
+            </div>
+            <div class="property-row">
+              <div class="property-label">L (м²):</div>
+              <div class="property-value">${(activeObj.properties.L || 0).toFixed(4)}</div>
+            </div>
+            <div class="property-row">
+              <div class="property-label">I:</div>
+              <div class="property-value">${(activeObj.properties.I || 0).toFixed(6)}</div>
+            </div>
+            <div class="property-row">
+              <div class="property-label">K (м):</div>
+              <div class="property-value">${(activeObj.properties.K || 0).toFixed(3)}</div>
+            </div>
+            <div class="property-row">
+              <div class="property-label">W (кг/м):</div>
+              <div class="property-value">${(activeObj.properties.W || 0).toFixed(2)}</div>
+            </div>
+        `;
+
+        // Отображаем информацию о соединении с изображением
+        if (activeObj.properties.connectsToImage) {
+          const conn = activeObj.properties.connectsToImage;
+          content += `
+            <div class="property-row">
+              <div class="property-label">Соединение:</div>
+              <div class="property-value">${conn.imageName || 'Объект'}</div>
+            </div>
+            <div class="property-row">
+              <div class="property-label">Подходит:</div>
+              <div class="property-value">${conn.approachingFrom === 'start' ? 'Началом' : 'Концом'}</div>
+            </div>
+            <div class="property-row">
+              <div class="property-label">Сторона:</div>
+              <div class="property-value">${getSideName(conn.side)}</div>
+            </div>
+          `;
+        }
+
+        content += `</div>`;
+      }
+
+      content += `
+        <div style="margin-top: 15px; text-align: center;">
+          <button onclick="showLinePropertiesModal()" style="padding: 8px 16px; font-size: 13px;">
+            ⚙️ Редактировать параметры
+          </button>
+        </div>
+      `;
+    } else if (activeObj.type === 'image') {
+      const props = activeObj.properties || {};
+      const width = Math.round(activeObj.width * activeObj.scaleX);
+      const height = Math.round(activeObj.height * activeObj.scaleY);
+
+      content += `
+        <div class="property-row">
+          <div class="property-label">Ширина:</div>
+          <div class="property-value">${width}px</div>
+        </div>
+        <div class="property-row">
+          <div class="property-label">Высота:</div>
+          <div class="property-value">${height}px</div>
+        </div>
+      `;
+
+      if (props.name || props.type) {
+        content += `
+          <div class="property-group" style="border-left-color: #e74c3c;">
+            <h4>🚪 Параметры объекта</h4>
+            <div class="property-row">
+              <div class="property-label">Название:</div>
+              <div class="property-value">${props.name || 'Без названия'}</div>
+            </div>
+            <div class="property-row">
+              <div class="property-label">Тип:</div>
+              <div class="property-value">${props.type || 'default'}</div>
+            </div>
+        `;
+
+        // Отображаем специфичные свойства
+        if (props.type === 'fan' && (props.airQuantity || props.airResistance)) {
+          content += `
+            <div class="property-row">
+              <div class="property-label">Кол-во воздуха:</div>
+              <div class="property-value">${(props.airQuantity || 0).toFixed(1)} м³/ч</div>
+            </div>
+            <div class="property-row">
+              <div class="property-label">Сопротивление:</div>
+              <div class="property-value">${(props.airResistance || 0).toFixed(1)} Па</div>
+            </div>
+          `;
+        } else if (props.type === 'fire' && (props.temperature || props.coverage)) {
+          content += `
+            <div class="property-row">
+              <div class="property-label">Температура:</div>
+              <div class="property-value">${props.temperature || 0} °C</div>
+            </div>
+            <div class="property-row">
+              <div class="property-label">Зона покрытия:</div>
+              <div class="property-value">${props.coverage || 0} м²</div>
+            </div>
+          `;
+        }
+
+        // Отображаем пользовательские свойства
+        if (props) {
+          Object.keys(props).forEach(key => {
+            if (!['name', 'type', 'imageId', 'imagePath', 'width', 'height', 'description', 'airQuantity', 'airResistance', 'temperature', 'coverage'].includes(key)) {
+              content += `
+                <div class="property-row">
+                  <div class="property-label">${key}:</div>
+                  <div class="property-value">${props[key]}</div>
+                </div>
+              `;
+            }
+          });
+        }
+
+        content += `</div>`;
+      }
+
+      // Проверяем, есть ли линии, соединенные с этим изображением
+      const connectedLines = canvas.getObjects().filter(obj =>
+        obj.type === 'line' &&
+        obj.properties &&
+        obj.properties.connectsToImage &&
+        obj.properties.connectsToImage.imageId === props.imageId
+      );
+
+      if (connectedLines.length > 0) {
+        content += `
+          <div class="property-group" style="border-left-color: #3498db;">
+            <h4>🔗 Подключенные линии</h4>
+            <div class="property-row">
+              <div class="property-label">Количество:</div>
+              <div class="property-value">${connectedLines.length} шт.</div>
+            </div>
+        `;
+
+        // Группируем по сторонам
+        const sides = {};
+        connectedLines.forEach(line => {
+          const side = line.properties.connectsToImage.side || 'unknown';
+          if (!sides[side]) sides[side] = 0;
+          sides[side]++;
+        });
+
+        Object.keys(sides).forEach(side => {
+          content += `
+            <div class="property-row">
+              <div class="property-label">${getSideName(side)}:</div>
+              <div class="property-value">${sides[side]} линии</div>
+            </div>
+          `;
+        });
+
+        content += `</div>`;
+      }
+
+      content += `
+        <div style="margin-top: 15px; text-align: center;">
+          <button onclick="showImagePropertiesModal()" style="padding: 8px 16px; font-size: 13px;">
+            🖼️ Редактировать параметры
+          </button>
+          <button onclick="splitLinesAtSelectedImage()" style="padding: 8px 16px; font-size: 13px; margin-left: 10px;">
+            ✂️ Разбить линии
+          </button>
+        </div>
+      `;
+    }
+
+    content += `</div>`;
+    propsContent.innerHTML = content;
+  }
+
+  function getSideName(side) {
+    const sideNames = {
+      'top': 'Верх',
+      'right': 'Право',
+      'bottom': 'Низ',
+      'left': 'Лево',
+      'unknown': 'Неизвестно'
+    };
+    return sideNames[side] || side;
+  }
+
+  // ==================== МОДАЛЬНОЕ ОКНО СВОЙСТВ ЛИНИИ ====================
+  function showLinePropertiesModal() {
+    const activeObject = canvas.getActiveObject();
+    if (!activeObject || activeObject.type !== 'line') {
+      showNotification('Пожалуйста, выберите линию для редактирования!', 'error');
+      return;
+    }
+
+    currentEditingLine = activeObject;
+    const props = activeObject.properties || {
+      name: 'Линия',
+      L: 0.5,
+      I: 0.015,
+      K: 10,
+      W: 1.0
+    };
+
+    document.getElementById('propertyName').value = props.name;
+    document.getElementById('propertyColor').value = activeObject.stroke || '#2a9d8f';
+    document.getElementById('propertyWidth').value = activeObject.strokeWidth || 2;
+
+    const isDashed = activeObject.strokeDashArray?.length > 0;
+    const isDotted = isDashed && activeObject.strokeDashArray[0] === 2;
+    document.getElementById('propertyLineType').value = isDotted ? 'dotted' : (isDashed ? 'dashed' : 'solid');
+
+    document.getElementById('propertyL').value = props.L;
+    document.getElementById('propertyI').value = props.I;
+    document.getElementById('propertyK').value = props.K;
+    document.getElementById('propertyW').value = props.W;
+
+    document.getElementById('linePropertiesModal').style.display = 'flex';
+  }
+
+  function closeLinePropertiesModal() {
+    document.getElementById('linePropertiesModal').style.display = 'none';
+    currentEditingLine = null;
+  }
+
+  function applyLineProperties() {
+    if (!currentEditingLine) return;
+
+    const newProperties = {
+      name: document.getElementById('propertyName').value,
+      L: parseFloat(document.getElementById('propertyL').value),
+      I: parseFloat(document.getElementById('propertyI').value),
+      K: parseFloat(document.getElementById('propertyK').value),
+      W: parseFloat(document.getElementById('propertyW').value)
+    };
+
+    // Сохраняем существующие свойства соединения
+    const oldProps = currentEditingLine.properties || {};
+    if (oldProps.connectsToImage) {
+      newProperties.connectsToImage = oldProps.connectsToImage;
+    }
+    if (oldProps.length) {
+      newProperties.length = oldProps.length;
+    }
+
+    const lineType = document.getElementById('propertyLineType').value;
+    let strokeDashArray;
+    switch (lineType) {
+      case 'dashed':
+        strokeDashArray = [5, 5];
+        break;
+      case 'dotted':
+        strokeDashArray = [2, 2];
+        break;
+      default:
+        strokeDashArray = null;
+    }
+
+    saveToUndoStack();
+    currentEditingLine.set({
+      stroke: document.getElementById('propertyColor').value,
+      strokeWidth: parseInt(document.getElementById('propertyWidth').value),
+      strokeDashArray: strokeDashArray,
+      properties: newProperties
+    });
+
+    canvas.renderAll();
+    updatePropertiesPanel();
+    closeLinePropertiesModal();
+    showNotification('Свойства линии обновлены', 'success');
+  }
+
+  // ==================== МОДАЛЬНОЕ ОКНО СВОЙСТВ ИЗОБРАЖЕНИЯ ====================
+  function showImagePropertiesModal() {
+    const activeObject = canvas.getActiveObject();
+    if (!activeObject || activeObject.type !== 'image') {
+      showNotification('Пожалуйста, выберите объект для редактирования!', 'error');
+      return;
+    }
+
+    currentEditingImage = activeObject;
+    const props = activeObject.properties || {
+      name: 'Объект',
+      type: 'default'
+    };
+
+    document.getElementById('imagePropertyName').value = props.name;
+    document.getElementById('imageType').value = props.type || 'default';
+    document.getElementById('imageWidth').value = Math.round(props.width || activeObject.width * activeObject.scaleX);
+    document.getElementById('imageHeight').value = Math.round(props.height || activeObject.height * activeObject.scaleY);
+    document.getElementById('imageRotation').value = Math.round(activeObject.angle || 0);
+
+    const opacity = activeObject.opacity !== undefined ? activeObject.opacity : 1;
+    document.getElementById('imageOpacity').value = opacity;
+    document.getElementById('opacityValue').textContent = Math.round(opacity * 100) + '%';
+
+    // Заполняем специфичные свойства
+    if (props.type === 'fan') {
+      document.getElementById('imageAirQuantity').value = props.airQuantity || '';
+      document.getElementById('imageAirResistance').value = props.airResistance || '';
+    } else if (props.type === 'fire') {
+      document.getElementById('fireTemperature').value = props.temperature || '';
+      document.getElementById('fireCoverage').value = props.coverage || '';
+    }
+
+    // Заполняем пользовательские свойства
+    const container = document.getElementById('customPropertiesContainer');
+    container.innerHTML = '';
+
+    if (props) {
+      Object.entries(props).forEach(([key, value]) => {
+        if (!['name', 'type', 'imageId', 'imagePath', 'width', 'height', 'description', 'airQuantity', 'airResistance', 'temperature', 'coverage'].includes(key)) {
+          const fieldDiv = document.createElement('div');
+          fieldDiv.className = 'form-row';
+          fieldDiv.style.marginBottom = '10px';
+          fieldDiv.innerHTML = `
+            <input type="text" class="custom-prop-name" placeholder="Название свойства" value="${key}" style="flex: 1;">
+            <input type="text" class="custom-prop-value" placeholder="Значение" value="${value}" style="flex: 1;">
+            <button type="button" onclick="this.parentElement.remove()" style="padding: 5px 10px; background: #e74c3c; color: white; border: none; border-radius: 4px; cursor: pointer;">
+              ✕
+            </button>
+          `;
+          container.appendChild(fieldDiv);
+        }
+      });
+    }
+
+    updateImageTypeFields();
+    document.getElementById('imagePropertiesModal').style.display = 'flex';
+    switchImageTab('basic');
+  }
+
+  function switchImageTab(tabName) {
+    document.querySelectorAll('#imagePropertiesModal .tab-content').forEach(tab => {
+      tab.classList.remove('active');
+    });
+
+    document.getElementById('imageTab' + tabName.charAt(0).toUpperCase() + tabName.slice(1)).classList.add('active');
+
+    document.querySelectorAll('#imagePropertiesModal .tab-button').forEach(btn => {
+      btn.classList.remove('active');
+    });
+    event.target.classList.add('active');
+  }
+
+  function updateImageTypeFields() {
+    const type = document.getElementById('imageType').value;
+
+    document.getElementById('fanProperties').style.display = 'none';
+    document.getElementById('fireProperties').style.display = 'none';
+    document.getElementById('valveProperties').style.display = 'none';
+
+    if (type === 'fan') {
+      document.getElementById('fanProperties').style.display = 'block';
+    } else if (type === 'fire') {
+      document.getElementById('fireProperties').style.display = 'block';
+    } else if (type === 'valve') {
+      document.getElementById('valveProperties').style.display = 'block';
+    }
+  }
+
+  function closeImagePropertiesModal() {
+    document.getElementById('imagePropertiesModal').style.display = 'none';
+    currentEditingImage = null;
+  }
+
+  function applyImageProperties() {
+    if (!currentEditingImage) return;
+
+    const newProperties = {
+      name: document.getElementById('imagePropertyName').value,
+      type: document.getElementById('imageType').value,
+      width: parseInt(document.getElementById('imageWidth').value),
+      height: parseInt(document.getElementById('imageHeight').value)
+    };
+
+    // Добавляем специфичные свойства
+    const type = newProperties.type;
+    if (type === 'fan') {
+      newProperties.airQuantity = parseFloat(document.getElementById('imageAirQuantity').value) || 0;
+      newProperties.airResistance = parseFloat(document.getElementById('imageAirResistance').value) || 0;
+    } else if (type === 'fire') {
+      newProperties.temperature = parseInt(document.getElementById('fireTemperature').value) || 0;
+      newProperties.coverage = parseInt(document.getElementById('fireCoverage').value) || 0;
+    } else if (type === 'valve') {
+      newProperties.diameter = parseInt(document.getElementById('valveDiameter').value) || 0;
+      newProperties.actuator = document.getElementById('valveActuator').value;
+    }
+
+    // Добавляем пользовательские свойства
+    const propNames = document.querySelectorAll('#customPropertiesContainer .custom-prop-name');
+    const propValues = document.querySelectorAll('#customPropertiesContainer .custom-prop-value');
+
+    for (let i = 0; i < propNames.length; i++) {
+      if (propNames[i].value.trim() && propValues[i].value.trim()) {
+        newProperties[propNames[i].value.trim()] = propValues[i].value.trim();
+      }
+    }
+
+    // Сохраняем старые свойства, которые не должны изменяться
+    const oldProps = currentEditingImage.properties || {};
+    newProperties.imageId = oldProps.imageId;
+    newProperties.imagePath = oldProps.imagePath;
+    newProperties.description = oldProps.description;
+
+    saveToUndoStack();
+    currentEditingImage.set({
+      scaleX: newProperties.width / currentEditingImage.width,
+      scaleY: newProperties.height / currentEditingImage.height,
+      angle: parseInt(document.getElementById('imageRotation').value) || 0,
+      opacity: parseFloat(document.getElementById('imageOpacity').value),
+      properties: newProperties
+    });
+
+    canvas.renderAll();
+    updatePropertiesPanel();
+    closeImagePropertiesModal();
+    showNotification('Свойства объекта обновлены', 'success');
+  }
+
+  // ==================== МОДАЛЬНОЕ ОКНО ДОБАВЛЕНИЯ ИЗОБРАЖЕНИЯ ====================
+  function showAddImageModal() {
+    document.getElementById('addImageModal').style.display = 'flex';
+    document.getElementById('previewContainer').style.display = 'none';
+    document.getElementById('addImageCustomProps').style.display = 'none';
+    document.getElementById('addImageForm').reset();
+    switchAddImageTab('upload');
+
+    // Заполняем стандартные изображения
+    const grid = document.getElementById('standardImagesGrid');
+    if (grid) {
+      grid.innerHTML = '';
+      defaultImages.forEach(img => {
+        const item = document.createElement('div');
+        item.className = 'image-item';
+        item.innerHTML = `
+          <img src="${img.path}" alt="${img.name}" onerror="this.src='https://via.placeholder.com/40?text=Error'">
+          <div class="image-item-name">${img.name}</div>
+        `;
+        item.onclick = () => {
+          document.getElementById('newImageUrl').value = img.path;
+          document.getElementById('newImageName').value = img.name;
+          document.getElementById('newImageType').value = img.type;
+          document.getElementById('newImageIcon').value = img.icon;
+        };
+        grid.appendChild(item);
+      });
+    }
+  }
+
+  function closeAddImageModal() {
+    document.getElementById('addImageModal').style.display = 'none';
+  }
+
+  function switchAddImageTab(tabName) {
+    // 1. Скрыть все вкладки
+    document.querySelectorAll('#addImageModal .tab-content').forEach(tab => {
+      tab.classList.remove('active');
+    });
+
+    // 2. Показать выбранную вкладку
+    document.getElementById(tabName + 'Tab').classList.add('active');
+
+    // 3. Обновить активную кнопку
+    document.querySelectorAll('#addImageModal .tab-button').forEach(btn => {
+      btn.classList.remove('active');
+    });
+    event.target.classList.add('active');
+
+    // 4. Динамически управлять атрибутом required
+    const urlInput = document.getElementById('newImageUrl');
+    const fileInput = document.getElementById('fileInput');
+
+    if (tabName === 'upload') {
+      // Вкладка "Загрузить": URL не обязателен
+      urlInput.removeAttribute('required');
+    } else if (tabName === 'url') {
+      // Вкладка "URL": URL обязателен
+      urlInput.setAttribute('required', true);
+    } else {
+      // Вкладка "Галерея": ничего не обязательно
+      urlInput.removeAttribute('required');
+    }
+  }
+
+  function handleFileUpload(file) {
+    if (!file.type.match('image.*')) {
+      showNotification('Пожалуйста, выберите файл изображения!', 'error');
+      return;
+    }
+
+    if (file.size > 2 * 1024 * 1024) {
+      showNotification('Файл слишком большой! Максимальный размер: 2MB', 'error');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = function (e) {
+      const preview = document.getElementById('imagePreview');
+      preview.src = e.target.result;
+      document.getElementById('previewContainer').style.display = 'block';
+
+      // Автоматически заполняем название
+      const name = file.name.replace(/\.[^/.]+$/, ""); // Убираем расширение
+      document.getElementById('newImageName').value = name;
+
+      // Показываем пользовательские свойства
+      document.getElementById('addImageCustomProps').style.display = 'block';
+    };
+
+    reader.readAsDataURL(file);
+  }
+
+  function addNewImage() {
+    const name = document.getElementById('newImageName').value.trim();
+    const type = document.getElementById('newImageType').value;
+    const icon = document.getElementById('newImageIcon').value || '🖼️';
+    const description = document.getElementById('newImageDescription').value.trim();
+
+    let imageUrl = document.getElementById('newImageUrl').value.trim();
+
+    // Если файл был загружен, используем его
+    const fileInput = document.getElementById('fileInput');
+    if (fileInput.files.length) {
+      const reader = new FileReader();
+      reader.onload = function (e) {
+        createImageObject(name, type, icon, description, e.target.result);
+      };
+      reader.readAsDataURL(fileInput.files[0]);
+    } else if (imageUrl) {
+      createImageObject(name, type, icon, description, imageUrl);
+    } else {
+      showNotification('Пожалуйста, загрузите изображение или укажите URL!', 'error');
+      return;
+    }
+  }
+
+  function createImageObject(name, type, icon, description, imageUrl) {
+    // Собираем пользовательские свойства
+    const customProps = {};
+    const propNames = document.querySelectorAll('#addImageCustomPropsContainer .custom-prop-name');
+    const propValues = document.querySelectorAll('#addImageCustomPropsContainer .custom-prop-value');
+
+    for (let i = 0; i < propNames.length; i++) {
+      if (propNames[i].value.trim() && propValues[i].value.trim()) {
+        customProps[propNames[i].value.trim()] = propValues[i].value.trim();
+      }
+    }
+
+    const newImage = {
+      id: 'custom_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9),
+      name: name,
+      icon: icon,
+      path: imageUrl,
+      type: type,
+      description: description,
+      properties: customProps
+    };
+
+    customImages.push(newImage);
+    saveCustomImages();
+    allImages = [...defaultImages, ...customImages];
+    updateImageTools();
+
+    closeAddImageModal();
+    showNotification(`Изображение "${name}" успешно добавлено!`, 'success');
+
+    // Активируем новое изображение
+    setTimeout(() => {
+      activateImagePlacementMode(newImage.id);
+    }, 300);
+  }
+
+  function addCustomPropertyField(context = 'addImage') {
+    const containerId = context === 'addImage' ? 'addImageCustomPropsContainer' : 'customPropertiesContainer';
+    const container = document.getElementById(containerId);
+
+    const fieldDiv = document.createElement('div');
+    fieldDiv.className = 'form-row';
+    fieldDiv.style.marginBottom = '10px';
+    fieldDiv.innerHTML = `
+      <input type="text" class="custom-prop-name" placeholder="Название свойства" style="flex: 1;">
+      <input type="text" class="custom-prop-value" placeholder="Значение" style="flex: 1;">
+      <button type="button" onclick="this.parentElement.remove()" style="padding: 5px 10px; background: #e74c3c; color: white; border: none; border-radius: 4px; cursor: pointer;">
+        ✕
+      </button>
+    `;
+
+    container.appendChild(fieldDiv);
+  }
+
+  function editCustomImage(imageId) {
+    const image = customImages.find(img => img.id === imageId);
+    if (!image) return;
+
+    showAddImageModal();
+
+    // Заполняем форму данными изображения
+    setTimeout(() => {
+      document.getElementById('newImageName').value = image.name;
+      document.getElementById('newImageIcon').value = image.icon;
+      document.getElementById('newImageType').value = image.type;
+      document.getElementById('newImageDescription').value = image.description || '';
+      document.getElementById('newImageUrl').value = image.path;
+
+      // Показываем пользовательские свойства
+      document.getElementById('addImageCustomProps').style.display = 'block';
+      const container = document.getElementById('addImageCustomPropsContainer');
+      container.innerHTML = '';
+
+      if (image.properties) {
+        Object.entries(image.properties).forEach(([key, value]) => {
+          const fieldDiv = document.createElement('div');
+          fieldDiv.className = 'form-row';
+          fieldDiv.style.marginBottom = '10px';
+          fieldDiv.innerHTML = `
+            <input type="text" class="custom-prop-name" placeholder="Название свойства" value="${key}" style="flex: 1;">
+            <input type="text" class="custom-prop-value" placeholder="Значение" value="${value}" style="flex: 1;">
+            <button type="button" onclick="this.parentElement.remove()" style="padding: 5px 10px; background: #e74c3c; color: white; border: none; border-radius: 4px; cursor: pointer;">
+              ✕
+            </button>
+          `;
+          container.appendChild(fieldDiv);
+        });
+      }
+    }, 100);
+
+    // Удаляем старое изображение
+    deleteCustomImage(imageId, false);
+  }
+
+  function deleteCustomImage(imageId, showNotification = true) {
+    if (!confirm('Удалить это изображение?')) return;
+
+    customImages = customImages.filter(img => img.id !== imageId);
+    saveCustomImages();
+    allImages = [...defaultImages, ...customImages];
+    updateImageTools();
+
+    if (showNotification) {
+      showNotification('Изображение удалено', 'success');
+    }
+  }
+
+  // ==================== УПРАВЛЕНИЕ МОДАЛЬНЫМИ ОКНАМИ ====================
+  function showManageImagesModal() {
+    document.getElementById('manageImagesModal').style.display = 'flex';
+    switchManageTab('custom');
+  }
+
+  function closeManageImagesModal() {
+    document.getElementById('manageImagesModal').style.display = 'none';
+  }
+
+  function switchManageTab(tabName) {
+    document.querySelectorAll('#manageImagesModal .tab-content').forEach(tab => {
+      tab.classList.remove('active');
+    });
+
+    document.getElementById(tabName + 'ImagesTab').classList.add('active');
+
+    document.querySelectorAll('#manageImagesModal .tab-button').forEach(btn => {
+      btn.classList.remove('active');
+    });
+    event.target.classList.add('active');
+
+    if (tabName === 'custom') {
+      updateCustomImagesList();
+    } else if (tabName === 'default') {
+      updateDefaultImagesList();
+    }
+  }
+
+  function updateCustomImagesList() {
+    const list = document.getElementById('customImagesList');
+    list.innerHTML = '';
+
+    customImages.forEach(image => {
+      const item = document.createElement('div');
+      item.className = 'image-item';
+      item.innerHTML = `
+        <div style="font-size: 30px; margin-bottom: 5px;">${image.icon}</div>
+        <div class="image-item-name">${image.name}</div>
+        <div class="image-item-type">${image.type}</div>
+        <div class="custom-image-actions" style="margin-top: 10px;">
+          <button class="edit-btn" onclick="editCustomImage('${image.id}'); event.stopPropagation();">✏️ Редактировать</button>
+          <button class="delete-btn" onclick="deleteCustomImage('${image.id}'); event.stopPropagation(); closeManageImagesModal();">🗑️ Удалить</button>
+        </div>
+      `;
+      list.appendChild(item);
+    });
+
+    document.getElementById('customImagesCount').textContent = customImages.length;
+  }
+
+  function updateDefaultImagesList() {
+    const list = document.getElementById('defaultImagesList');
+    list.innerHTML = '';
+
+    defaultImages.forEach(image => {
+      const item = document.createElement('div');
+      item.className = 'image-item';
+      item.innerHTML = `
+        <img src="${image.path}" alt="${image.name}" onerror="this.src='https://via.placeholder.com/40?text=Error'">
+        <div class="image-item-name">${image.name}</div>
+        <div class="image-item-type">${image.type}</div>
+      `;
+      list.appendChild(item);
+    });
+  }
+
+  // ==================== ИМПОРТ/ЭКСПОРТ ====================
+  function exportCustomImages() {
+    const dataStr = JSON.stringify(customImages, null, 2);
+    const dataUri = 'data:application/json;charset=utf-8,' + encodeURIComponent(dataStr);
+
+    const exportFileDefaultName = `изображения-чертежей-${new Date().toISOString().slice(0, 10)}.json`;
+
+    const linkElement = document.createElement('a');
+    linkElement.setAttribute('href', dataUri);
+    linkElement.setAttribute('download', exportFileDefaultName);
+    linkElement.click();
+
+    showNotification('Изображения экспортированы!', 'success');
+  }
+
+  function importCustomImages(file) {
+    const reader = new FileReader();
+    reader.onload = function (e) {
+      try {
+        const importedImages = JSON.parse(e.target.result);
+
+        // Проверяем структуру данных
+        if (!Array.isArray(importedImages)) {
+          throw new Error('Некорректный формат файла');
+        }
+
+        // Добавляем новые изображения
+        importedImages.forEach(img => {
+          if (img.id && img.name && img.path) {
+            // Генерируем новый ID для избежания конфликтов
+            img.id = 'imported_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+            customImages.push(img);
+          }
+        });
+
+        saveCustomImages();
+        allImages = [...defaultImages, ...customImages];
+        updateImageTools();
+        updateCustomImagesList();
+
+        showNotification(`Импортировано ${importedImages.length} изображений`, 'success');
+      } catch (error) {
+        showNotification('Ошибка импорта файла: ' + error.message, 'error');
+      }
+    };
+
+    reader.readAsText(file);
+  }
+
+  function clearAllCustomImages() {
+    if (!confirm('ВНИМАНИЕ: Это удалит все ваши пользовательские изображения. Действие нельзя отменить! Продолжить?')) {
+      return;
+    }
+
+    customImages = [];
+    saveCustomImages();
+    allImages = [...defaultImages];
+    updateImageTools();
+    updateCustomImagesList();
+
+    showNotification('Все пользовательские изображения удалены', 'success');
+  }
+
+  // ==================== СОХРАНЕНИЕ И ЗАГРУЗКА ЧЕРТЕЖА ====================
+  function saveDrawing() {
+    const json = JSON.stringify(canvas.toJSON(['id', 'properties']));
+    localStorage.setItem('fabricDrawing', json);
+
+    const blob = new Blob([json], {type: 'application/json'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `чертеж-${new Date().toISOString().slice(0, 10)}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+
+    const count = canvas.getObjects().filter(obj => obj.id !== 'grid-group' && obj.id !== 'grid-line').length;
+    showNotification(`Чертеж сохранен! (${count} объектов)`, 'success');
+  }
+
+  function loadDrawing() {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.json';
+
+    input.onchange = function (e) {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = function (event) {
+        try {
+          const json = event.target.result;
+          deactivateAllModes();
+          canvas.clear();
+          drawGrid(20);
+
+          canvas.loadFromJSON(json, function () {
+            const lines = canvas.getObjects().filter(obj =>
+              obj.type === 'line' && obj.id !== 'grid-line'
+            );
+
+            if (lines.length > 0) {
+              const lastLine = lines[lines.length - 1];
+              lastLineEndPoint = {x: lastLine.x2, y: lastLine.y2};
+            }
+
+            canvas.renderAll();
+            updatePropertiesPanel();
+            updateStatus();
+
+            const count = canvas.getObjects().filter(obj => obj.id !== 'grid-group' && obj.id !== 'grid-line').length;
+            showNotification(`Чертеж загружен! (${count} объектов)`, 'success');
+          });
+        } catch (error) {
+          showNotification('Ошибка загрузки файла: ' + error.message, 'error');
+        }
+      };
+      reader.readAsText(file);
+    };
+
+    input.click();
+  }
+
+  // ==================== УПРАВЛЕНИЕ ОБЪЕКТАМИ ====================
+  function clearCanvas() {
+    if (!confirm('Удалить все объекты с чертежа?')) return;
+
+    deactivateAllModes();
+    lastLineEndPoint = null;
+
+    canvas.getObjects().forEach(obj => {
+      if (obj.id !== 'grid-group' && obj.id !== 'grid-line') {
+        canvas.remove(obj);
+      }
+    });
+
+    canvas.renderAll();
+    updatePropertiesPanel();
+    updateStatus();
+    showNotification('Холст очищен', 'info');
+  }
+
+  function groupObjects() {
+    const activeObjects = canvas.getActiveObjects();
+    if (activeObjects.length < 2) {
+      showNotification('Выберите хотя бы 2 объекта для группировки', 'error');
+      return;
+    }
+
+    saveToUndoStack();
+    const group = new fabric.Group(activeObjects);
+    canvas.remove(...activeObjects);
+    canvas.add(group);
+    canvas.setActiveObject(group);
+    canvas.renderAll();
+
+    showNotification(`Объекты сгруппированы (${activeObjects.length} шт.)`, 'success');
+  }
+
+  function ungroupObjects() {
+    const activeObject = canvas.getActiveObject();
+    if (!activeObject || activeObject.type !== 'group') {
+      showNotification('Выберите группу для разгруппировки', 'error');
+      return;
+    }
+
+    saveToUndoStack();
+    const objects = activeObject.getObjects();
+    activeObject.toActiveSelection();
+    canvas.remove(activeObject);
+
+    objects.forEach(obj => {
+      canvas.add(obj);
+    });
+
+    const selection = new fabric.ActiveSelection(objects, {canvas: canvas});
+    canvas.setActiveObject(selection);
+    canvas.renderAll();
+
+    showNotification('Группа разгруппирована', 'success');
+  }
+
+  // ==================== КОНТЕКСТНОЕ МЕНЮ ====================
+  function showContextMenu(x, y) {
+    const contextMenu = document.getElementById('contextMenu');
+    const activeObject = canvas.getActiveObject();
+
+    if (!activeObject) return;
+
+    contextMenu.style.display = 'block';
+    contextMenu.style.left = x + 'px';
+    contextMenu.style.top = y + 'px';
+    contextMenuVisible = true;
+
+    // Позиционируем меню, чтобы оно не выходило за границы окна
+    const rect = contextMenu.getBoundingClientRect();
+    if (x + rect.width > window.innerWidth) {
+      contextMenu.style.left = (x - rect.width) + 'px';
+    }
+    if (y + rect.height > window.innerHeight) {
+      contextMenu.style.top = (y - rect.height) + 'px';
+    }
+  }
+
+  function hideContextMenu() {
+    if (!contextMenuVisible) return;
+
+    const contextMenu = document.getElementById('contextMenu');
+    contextMenu.style.display = 'none';
+    contextMenuVisible = false;
+  }
+
+  function copyObject() {
+    const activeObject = canvas.getActiveObject();
+    if (activeObject) {
+      copiedObject = activeObject.toJSON();
+      showNotification('Объект скопирован', 'success');
+      hideContextMenu();
+    }
+  }
+
+  function pasteObject() {
+    if (!copiedObject) {
+      showNotification('Нет скопированного объекта', 'error');
+      return;
+    }
+
+    fabric.util.enlivenObjects([copiedObject], function (objects) {
+      objects.forEach(obj => {
+        obj.left += 20;
+        obj.top += 20;
+        canvas.add(obj);
+      });
+      canvas.renderAll();
+      showNotification('Объект вставлен', 'success');
+    });
+
+    hideContextMenu();
+  }
+
+  function duplicateObject() {
+    const activeObject = canvas.getActiveObject();
+    if (!activeObject) {
+      showNotification('Выберите объект для дублирования', 'error');
+      return;
+    }
+
+    saveToUndoStack();
+    activeObject.clone(function (clone) {
+      clone.left += 20;
+      clone.top += 20;
+      canvas.add(clone);
+      canvas.setActiveObject(clone);
+      canvas.renderAll();
+      showNotification('Объект дублирован', 'success');
+    });
+
+    hideContextMenu();
+  }
+
+  function bringObjectToFront() {
+    const activeObject = canvas.getActiveObject();
+    if (!activeObject) return;
+
+    saveToUndoStack();
+    activeObject.bringToFront();
+    canvas.renderAll();
+    showNotification('Объект перемещен на передний план', 'success');
+    hideContextMenu();
+  }
+
+  function sendObjectToBack() {
+    const activeObject = canvas.getActiveObject();
+    if (!activeObject) return;
+
+    saveToUndoStack();
+    activeObject.sendToBack();
+    canvas.renderAll();
+    showNotification('Объект перемещен на задний план', 'success');
+    hideContextMenu();
+  }
+
+  function deleteObject() {
+    const activeObject = canvas.getActiveObject();
+    if (!activeObject) return;
+
+    saveToUndoStack();
+    canvas.remove(activeObject);
+    canvas.renderAll();
+    updatePropertiesPanel();
+    updateStatus();
+    showNotification('Объект удален', 'info');
+    hideContextMenu();
+  }
+
+  // ==================== ОТМЕНА/ПОВТОР ====================
+  function saveToUndoStack() {
+    const json = JSON.stringify(canvas.toJSON(['id', 'properties']));
+    undoStack.push(json);
+    redoStack = [];
+
+    // Ограничиваем размер стека
+    if (undoStack.length > 50) {
+      undoStack.shift();
+    }
+
+    updateUndoRedoButtons();
+  }
+
+  function undoAction() {
+    if (undoStack.length < 2) return;
+
+    const currentState = undoStack.pop();
+    redoStack.push(currentState);
+
+    const previousState = undoStack[undoStack.length - 1];
+    canvas.loadFromJSON(previousState, function () {
+      canvas.renderAll();
+      updatePropertiesPanel();
+      updateStatus();
+    });
+
+    updateUndoRedoButtons();
+    showNotification('Действие отменено', 'info');
+  }
+
+  function redoAction() {
+    if (redoStack.length === 0) return;
+
+    const nextState = redoStack.pop();
+    undoStack.push(nextState);
+
+    canvas.loadFromJSON(nextState, function () {
+      canvas.renderAll();
+      updatePropertiesPanel();
+      updateStatus();
+    });
+
+    updateUndoRedoButtons();
+    showNotification('Действие повторено', 'info');
+  }
+
+  function updateUndoRedoButtons() {
+    const undoBtn = document.getElementById('undoBtn');
+    if (undoBtn) {
+      undoBtn.disabled = undoStack.length < 2;
+    }
+  }
+
+  // ==================== УВЕДОМЛЕНИЯ ====================
+  function showNotification(message, type = 'info') {
+    const container = document.getElementById('notificationContainer');
+    const notification = document.createElement('div');
+    notification.className = `notification ${type}`;
+    notification.textContent = message;
+
+    container.appendChild(notification);
+
+    setTimeout(() => {
+      notification.remove();
+    }, 3000);
+  }
+
+  // ==================== ЭКСПОРТ В КОНСОЛЬ ====================
+  function exportToConsole() {
+    const objects = canvas.getObjects().filter(obj => obj.id !== 'grid-group' && obj.id !== 'grid-line');
+    const exportData = {
+      timestamp: new Date().toISOString(),
+      totalObjects: objects.length,
+      objects: []
+    };
+
+    objects.forEach((obj, index) => {
+      const objData = {
+        id: index + 1,
+        type: obj.type,
+        position: {
+          x: obj.left || obj.x1,
+          y: obj.top || obj.y1
+        },
+        properties: obj.properties || {}
+      };
+
+      if (obj.type === 'line') {
+        objData.dimensions = {
+          x1: obj.x1,
+          y1: obj.y1,
+          x2: obj.x2,
+          y2: obj.y2,
+          length: Math.sqrt(Math.pow(obj.x2 - obj.x1, 2) + Math.pow(obj.y2 - obj.y1, 2))
+        };
+
+        if (obj.properties && obj.properties.connectsToImage) {
+          objData.connection = obj.properties.connectsToImage;
+        }
+      } else if (obj.type === 'image') {
+        objData.dimensions = {
+          width: obj.width * obj.scaleX,
+          height: obj.height * obj.scaleY,
+          scaleX: obj.scaleX,
+          scaleY: obj.scaleY
+        };
+      }
+
+      exportData.objects.push(objData);
+    });
+
+    console.log('📊 Экспорт данных чертежа:', exportData);
+    console.table(exportData.objects.map(obj => ({
+      'ID': obj.id,
+      'Тип': obj.type,
+      'Подтип': obj.properties.type || 'Нет',
+      'X': Math.round(obj.position.x),
+      'Y': Math.round(obj.position.y),
+      'Название': obj.properties.name || 'Нет',
+      'Соединение': obj.connection ? `К ${obj.connection.imageName}` : 'Нет'
+    })));
+
+    showNotification(`Данные экспортированы в консоль (${objects.length} объектов)`, 'success');
+  }
+
+  // ==================== ПРЕДОТВРАЩЕНИЕ КОНТЕКСТНОГО МЕНЮ БРАУЗЕРА ====================
+  document.getElementById('fabric-canvas').addEventListener('contextmenu', function (e) {
+    e.preventDefault();
+  });
+</script>
+</body>
+</html>
