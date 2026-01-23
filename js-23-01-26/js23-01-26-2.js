@@ -1080,24 +1080,82 @@ function saveDrawing() {
 }
 
 // ==================== ИНИЦИАЛИЗАЦИЯ МОДАЛЬНЫХ ОКОН ====================
+// function initializeModals() {
+//   document.getElementById('linePropertiesForm')?.addEventListener('submit', function (e) {
+//     e.preventDefault();
+//     applyLineProperties();
+//   });
+//
+//   document.getElementById('addImageForm')?.addEventListener('submit', function (e) {
+//     e.preventDefault();
+//     addNewImage();
+//   });
+//
+//   document.getElementById('objectPropertiesForm')?.addEventListener('submit', function (e) {
+//     e.preventDefault();
+//     applyObjectProperties();
+//   });
+//
+//   document.getElementById('objPropertyOpacity')?.addEventListener('input', function (e) {
+//     document.getElementById('opacityValue').textContent = e.target.value + '%';
+//   });
+// }
+
+// ==================== ИНИЦИАЛИЗАЦИЯ МОДАЛЬНЫХ ОКОН ====================
 function initializeModals() {
+  // Форма свойств линии
   document.getElementById('linePropertiesForm')?.addEventListener('submit', function (e) {
     e.preventDefault();
     applyLineProperties();
   });
 
+  // Форма добавления изображения
   document.getElementById('addImageForm')?.addEventListener('submit', function (e) {
     e.preventDefault();
     addNewImage();
   });
 
+  // Форма свойств объекта
   document.getElementById('objectPropertiesForm')?.addEventListener('submit', function (e) {
     e.preventDefault();
     applyObjectProperties();
   });
 
-  document.getElementById('objPropertyOpacity')?.addEventListener('input', function (e) {
-    document.getElementById('opacityValue').textContent = e.target.value + '%';
+  // Обновление значения непрозрачности при движении ползунка
+  const opacitySlider = document.getElementById('objPropertyOpacity');
+  const opacityValue = document.getElementById('opacityValue');
+
+  if (opacitySlider && opacityValue) {
+    opacitySlider.addEventListener('input', function (e) {
+      opacityValue.textContent = e.target.value + '%';
+    });
+  }
+
+  // Закрытие модальных окон при клике вне их области
+  document.querySelectorAll('.modal').forEach(modal => {
+    modal.addEventListener('click', function (e) {
+      if (e.target === modal) {
+        if (modal.id === 'linePropertiesModal') {
+          closeLinePropertiesModal();
+        } else if (modal.id === 'addImageModal') {
+          closeAddImageModal();
+        } else if (modal.id === 'objectPropertiesModal') {
+          closeObjectPropertiesModal();
+        } else if (modal.id === 'intersectionPointModal') {
+          closeIntersectionPointModal();
+        }
+      }
+    });
+  });
+
+  // Закрытие по клавише ESC
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') {
+      closeLinePropertiesModal();
+      closeAddImageModal();
+      closeObjectPropertiesModal();
+      closeIntersectionPointModal();
+    }
   });
 }
 
