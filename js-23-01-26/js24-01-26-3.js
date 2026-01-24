@@ -426,6 +426,7 @@ function updateStatus() {
   document.getElementById('status').innerHTML = statusText;
 }
 
+// Обновленная функция addImageAtPosition (убираем автоматическое разделение)
 function addImageAtPosition(x, y) {
   if (!currentImageData) {
     showNotification('Сначала выберите изображение!', 'error');
@@ -466,7 +467,7 @@ function addImageAtPosition(x, y) {
     canvas.add(img);
     canvas.setActiveObject(img);
 
-    // Автоматически разделяем линии
+    // ОПЦИОНАЛЬНО: автоматически разделяем линии по центру объекта
     if (autoSplitMode) {
       setTimeout(() => {
         splitLinesAtImagePosition(img);
@@ -480,6 +481,68 @@ function addImageAtPosition(x, y) {
   }, {
     crossOrigin: 'anonymous'
   });
+}
+
+
+// Новая функция для принудительного разделения всех линий по центрам объектов
+function splitAllLinesAtObjectCenters() {
+  const lines = canvas.getObjects().filter(obj =>
+    obj.type === 'line' && obj.id !== 'grid-line'
+  );
+
+  const images = canvas.getObjects().filter(obj => obj.type === 'image');
+  let splitCount = 0;
+
+  lines.forEach(line => {
+    images.forEach(image => {
+      const center = getObjectCenter(image);
+      const closestPoint = findClosestPointOnLine(center, line);
+
+      if (closestPoint.param >= 0 && closestPoint.param <= 1) {
+        const tolerance = Math.max(image.width * image.scaleX, image.height * image.scaleY) / 2;
+        const distanceToCenter = Math.sqrt(
+          Math.pow(closestPoint.x - center.x, 2) +
+          Math.pow(closestPoint.y - center.y, 2)
+        );
+
+        if (distanceToCenter <= tolerance) {
+          const splitResult = splitLineAtPoint(line, {
+            x: closestPoint.x,
+            y: closestPoint.y
+          });
+
+          if (splitResult) {
+            saveToUndoStack();
+            canvas.remove(line);
+            canvas.add(splitResult.line1);
+            canvas.add(splitResult.line2);
+            splitCount++;
+
+            // Обновляем ссылку на линию для следующих проверок
+            // (теперь у нас две линии вместо одной)
+            return;
+          }
+        }
+      }
+    });
+  });
+
+  // Перестраиваем точки пересечения
+  setTimeout(() => {
+    clearIntersectionPoints();
+    const intersections = findAllIntersections();
+    intersectionPoints = intersections;
+    intersections.forEach((inter, idx) => {
+      createIntersectionPoint(inter.x, inter.y, idx, inter);
+    });
+    bringIntersectionPointsToFront();
+  }, 50);
+
+  if (splitCount > 0) {
+    showNotification(`Разделено ${splitCount} линий по центрам объектов`, 'success');
+  } else {
+    showNotification('Линий для разделения по центрам объектов не найдено', 'info');
+  }
 }
 
 // ==================== ОБРАБОТЧИКИ СОБЫТИЙ ====================
@@ -638,6 +701,7 @@ function setupCanvasEvents() {
 }
 
 // ==================== ГОРЯЧИЕ КЛАВИШИ ====================
+// Также обновляем горячие клавиши
 function setupKeyboardShortcuts() {
   document.addEventListener('keydown', function (event) {
     // ESC - отмена
@@ -683,6 +747,10 @@ function setupKeyboardShortcuts() {
       case 's':
         event.preventDefault();
         splitAllLines();
+        break;
+      case 'c': // Новая горячая клавиша для разделения по центрам
+        event.preventDefault();
+        splitAllLinesAtObjectCenters();
         break;
       case 'g':
         event.preventDefault();
@@ -1187,6 +1255,7 @@ function addNewImage() {
 }
 
 // ==================== ФУНКЦИИ РАЗДЕЛЕНИЯ ЛИНИЙ ====================
+// Обновленная функция splitAllLines для работы с новой логикой
 function splitAllLines() {
   // Очищаем предыдущие точки
   clearIntersectionPoints();
@@ -1197,25 +1266,44 @@ function splitAllLines() {
   // Сохраняем информацию о точках
   intersectionPoints = intersections;
 
-  // Создаем визуальные точки и разбиваем линии
+  // Создаем визуальные точки
   intersections.forEach((inter, index) => {
     createIntersectionPoint(inter.x, inter.y, index, inter);
-    splitLinesAtPoint(inter);
+  });
+
+  // Разделяем линии для всех пересечений (кроме центров объектов, если в ручном режиме)
+  intersections.forEach((inter, index) => {
+    if (inter.line1 && inter.line2) {
+      // Пересечение линии с линией - всегда разделяем
+      splitLinesAtPoint(inter);
+    } else if (inter.line1 && inter.object) {
+      // Пересечение линии с объектом - разделяем только если не в ручном режиме
+      if (lineSplitMode !== 'MANUAL' || autoSplitMode) {
+        const splitResult = splitLineAtPoint(inter.line1, {
+          x: inter.x,
+          y: inter.y
+        });
+        if (splitResult) {
+          saveToUndoStack();
+          canvas.remove(inter.line1);
+          canvas.add(splitResult.line1);
+          canvas.add(splitResult.line2);
+        }
+      }
+    }
   });
 
   canvas.renderAll();
-
-  // ВАЖНО: гарантируем, что точки будут сверху
   bringIntersectionPointsToFront();
 
   if (intersections.length > 0) {
-    showNotification(`Создано ${intersections.length} точек разделения`, 'success');
+    showNotification(`Найдено ${intersections.length} точек пересечения`, 'success');
   } else {
     showNotification('Пересечений для разделения не найдено', 'info');
   }
 }
 
-// Функция для поиска пересечений
+// Обновленная функция поиска всех пересечений (добавляем пересечения с центрами объектов)
 function findAllIntersections() {
   const lines = canvas.getObjects().filter(obj =>
     obj.type === 'line' && obj.id !== 'grid-line'
@@ -1234,19 +1322,34 @@ function findAllIntersections() {
     }
   }
 
-  // Пересечения линий с объектами
+  // Пересечения линий с центрами объектов (новый тип пересечений)
   lines.forEach(line => {
     images.forEach(image => {
-      const rect = getObjectRect(image);
-      const lineIntersections = getLineRectIntersections(line, rect);
-      lineIntersections.forEach(inter => {
-        intersections.push({
-          x: inter.point.x,
-          y: inter.point.y,
-          line1: line,
-          object: image
-        });
-      });
+      const center = getObjectCenter(image);
+      const closestPoint = findClosestPointOnLine(center, line);
+
+      if (closestPoint.param >= 0 && closestPoint.param <= 1) {
+        // Проверяем, находится ли точка в пределах объекта
+        const rect = getObjectRect(image);
+        const tolerance = Math.max(image.width * image.scaleX, image.height * image.scaleY) / 2;
+
+        const distanceToCenter = Math.sqrt(
+          Math.pow(closestPoint.x - center.x, 2) +
+          Math.pow(closestPoint.y - center.y, 2)
+        );
+
+        if (distanceToCenter <= tolerance) {
+          intersections.push({
+            x: closestPoint.x,
+            y: closestPoint.y,
+            line1: line,
+            object: image,
+            type: 'object-center',
+            objectCenter: center,
+            param: closestPoint.param
+          });
+        }
+      }
     });
   });
 
@@ -1293,6 +1396,60 @@ function lineIntersection(line1, line2) {
 
   return null;
 }
+
+// Новая функция для нахождения центра объекта
+function getObjectCenter(obj) {
+  const width = obj.width * obj.scaleX;
+  const height = obj.height * obj.scaleY;
+
+  return {
+    x: obj.left,
+    y: obj.top,
+    width: width,
+    height: height
+  };
+}
+
+// Функция для нахождения проекции точки на линию (ближайшей точки на линии к заданной точке)
+function findClosestPointOnLine(point, line) {
+  const x1 = line.x1;
+  const y1 = line.y1;
+  const x2 = line.x2;
+  const y2 = line.y2;
+
+  const A = point.x - x1;
+  const B = point.y - y1;
+  const C = x2 - x1;
+  const D = y2 - y1;
+
+  const dot = A * C + B * D;
+  const lenSq = C * C + D * D;
+
+  let param = -1;
+  if (lenSq !== 0) {
+    param = dot / lenSq;
+  }
+
+  let xx, yy;
+
+  if (param < 0) {
+    xx = x1;
+    yy = y1;
+  } else if (param > 1) {
+    xx = x2;
+    yy = y2;
+  } else {
+    xx = x1 + param * C;
+    yy = y1 + param * D;
+  }
+
+  return {
+    x: xx,
+    y: yy,
+    param: param
+  };
+}
+
 
 // Получение границ объекта
 function getObjectRect(obj) {
@@ -1564,88 +1721,76 @@ function splitLineAtPoint(line, point) {
 }
 
 // Разделение линий по изображению
+// Переписанная функция разделения линий по изображению (с центром объекта)
 function splitLinesAtImagePosition(image) {
   const lines = canvas.getObjects().filter(obj =>
     obj.type === 'line' && obj.id !== 'grid-line'
   );
 
-  const rect = getObjectRect(image);
   let splitCount = 0;
 
   lines.forEach(line => {
-    const intersections = getLineRectIntersections(line, rect);
+    // Получаем центр объекта
+    const center = getObjectCenter(image);
 
-    if (intersections.length >= 2) {
-      // Сортируем точки по расстоянию от начала линии
-      intersections.sort((a, b) => {
-        const distA = Math.sqrt(Math.pow(a.point.x - line.x1, 2) + Math.pow(a.point.y - line.y1, 2));
-        const distB = Math.sqrt(Math.pow(b.point.x - line.x1, 2) + Math.pow(b.point.y - line.y1, 2));
-        return distA - distB;
-      });
+    // Находим ближайшую точку на линии к центру объекта
+    const closestPoint = findClosestPointOnLine(center, line);
 
-      // Разделяем линию на сегменты
-      const segments = [];
-      let currentStart = {x: line.x1, y: line.y1};
+    // Проверяем, что точка находится в пределах линии (не за ее концами)
+    if (closestPoint.param >= 0 && closestPoint.param <= 1) {
+      // Проверяем, что точка действительно находится внутри объекта или очень близко к нему
+      const rect = getObjectRect(image);
+      const tolerance = Math.max(image.width * image.scaleX, image.height * image.scaleY) / 2;
 
-      intersections.forEach((inter, index) => {
-        if (index === 0) {
-          // Сегмент до первого пересечения
-          segments.push({
-            start: currentStart,
-            end: inter.point
-          });
-        } else if (index === intersections.length - 1) {
-          // Сегмент после последнего пересечения
-          segments.push({
-            start: inter.point,
-            end: {x: line.x2, y: line.y2}
-          });
-        }
-      });
+      // Проверяем расстояние от точки до центра объекта
+      const distanceToCenter = Math.sqrt(
+        Math.pow(closestPoint.x - center.x, 2) +
+        Math.pow(closestPoint.y - center.y, 2)
+      );
 
-      if (segments.length > 0) {
-        // Удаляем старую линию и добавляем новые сегменты
-        saveToUndoStack();
-        canvas.remove(line);
-
-        segments.forEach(segment => {
-          const segLength = Math.sqrt(
-            Math.pow(segment.end.x - segment.start.x, 2) +
-            Math.pow(segment.end.y - segment.start.y, 2)
-          );
-
-          if (segLength > 1) {
-            const newLine = new fabric.Line([
-              segment.start.x, segment.start.y,
-              segment.end.x, segment.end.y
-            ], {
-              stroke: line.stroke,
-              strokeWidth: line.strokeWidth,
-              strokeDashArray: line.strokeDashArray,
-              fill: false,
-              strokeLineCap: 'round',
-              hasControls: true,
-              hasBorders: true,
-              lockRotation: false,
-              properties: {...line.properties}
-            });
-
-            if (newLine.properties) {
-              newLine.properties.length = segLength;
-            }
-
-            canvas.add(newLine);
-            splitCount++;
-          }
+      // Если точка достаточно близко к центру объекта, разделяем линию
+      if (distanceToCenter <= tolerance) {
+        const splitResult = splitLineAtPoint(line, {
+          x: closestPoint.x,
+          y: closestPoint.y
         });
+
+        if (splitResult) {
+          saveToUndoStack();
+          canvas.remove(line);
+          canvas.add(splitResult.line1);
+          canvas.add(splitResult.line2);
+          splitCount++;
+
+          // Создаем точку пересечения в центре объекта
+          const interIndex = intersectionPoints.length;
+          const interData = {
+            x: closestPoint.x,
+            y: closestPoint.y,
+            line1: line,
+            object: image,
+            type: 'object-center',
+            objectCenter: center
+          };
+
+          intersectionPoints.push(interData);
+
+          if (lineSplitMode !== 'MANUAL' || autoSplitMode) {
+            createIntersectionPoint(closestPoint.x, closestPoint.y, interIndex, interData);
+            bringIntersectionPointsToFront();
+          }
+        }
       }
     }
   });
 
   if (splitCount > 0) {
-    showNotification(`Разделено ${splitCount} линий`, 'success');
+    showNotification(`Разделено ${splitCount} линий по центру объектов`, 'success');
   }
+
+  canvas.renderAll();
 }
+
 
 // ==================== МОДАЛЬНОЕ ОКНО ИНФОРМАЦИИ О ТОЧКЕ ====================
 function showIntersectionPointInfo(pointIndex) {
@@ -1702,24 +1847,57 @@ function showIntersectionPointInfo(pointIndex) {
         <div class="property-value">X: ${pointData.x.toFixed(1)}, Y: ${pointData.y.toFixed(1)}</div>
       </div>
       <div class="property-row">
+        <div class="property-label">Тип:</div>
+        <div class="property-value">
+  `;
+
+  if (pointData.type === 'object-center') {
+    html += 'Центр объекта';
+  } else if (pointData.line1 && pointData.line2) {
+    html += 'Пересечение линий';
+  } else {
+    html += 'Пересечение линии с объектом';
+  }
+
+  html += `
+        </div>
+      </div>
+      <div class="property-row">
         <div class="property-label">Статистика:</div>
         <div class="property-value">
           🟢 ${linesStartingHere.length} начала | 🔴 ${linesEndingHere.length} окончаний | 🖼️ ${objectsAtPoint.length} объектов
         </div>
       </div>
-      <div style="margin-top: 15px; text-align: center;">
-        <button onclick="zoomToPoint(${pointData.x}, ${pointData.y})" style="padding: 6px 12px; font-size: 12px; margin: 2px;">
-          🔍 Приблизить к точке
-        </button>
-        <button onclick="selectAllAtPoint(${pointIndex})" style="padding: 6px 12px; font-size: 12px; margin: 2px;">
-          🎯 Выбрать все в точке
-        </button>
-        <button onclick="addNoteToPoint(${pointIndex})" style="padding: 6px 12px; font-size: 12px; margin: 2px;">
-          📝 Добавить заметку
-        </button>
-      </div>
-    </div>
   `;
+
+  // Если это центр объекта, показываем дополнительную информацию
+  if (pointData.type === 'object-center' && pointData.object) {
+    const obj = pointData.object;
+    const center = getObjectCenter(obj);
+    const props = obj.properties || {};
+
+    html += `
+      <div class="property-group">
+        <h4>🎯 Центр объекта:</h4>
+        <div class="property-row">
+          <div class="property-label">Объект:</div>
+          <div class="property-value">${props.name || 'Объект'}</div>
+        </div>
+        <div class="property-row">
+          <div class="property-label">Координаты центра:</div>
+          <div class="property-value">X: ${center.x.toFixed(1)}, Y: ${center.y.toFixed(1)}</div>
+        </div>
+        <div class="property-row">
+          <div class="property-label">Размер объекта:</div>
+          <div class="property-value">${Math.round(center.width)} × ${Math.round(center.height)} px</div>
+        </div>
+        <div class="property-row">
+          <div class="property-label">Расстояние до линии:</div>
+          <div class="property-value">${pointData.param ? (pointData.param * 100).toFixed(1) + '% от начала' : 'н/д'}</div>
+        </div>
+      </div>
+    `;
+  }
 
   // Информация о самом пересечении
   if (pointData.line1 && pointData.line2) {
@@ -1858,6 +2036,9 @@ function showIntersectionPointInfo(pointIndex) {
     });
 
     html += `</div>`;
+
+    document.getElementById('intersectionPointInfo').innerHTML = html;
+    document.getElementById('intersectionPointModal').style.display = 'flex';
   }
 
   // Отображаем линии, начинающиеся в точке

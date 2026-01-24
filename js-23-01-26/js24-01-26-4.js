@@ -14,6 +14,7 @@ let redoStack = [];
 let contextMenuVisible = false;
 let autoSplitMode = true;
 let lineSplitMode = 'AUTO';
+let altKeyPressed = false; // Новый флаг для отслеживания нажатия Alt
 
 // Переменные для точек разделения
 let intersectionPoints = [];
@@ -202,6 +203,9 @@ document.addEventListener('DOMContentLoaded', function () {
   updateImageTools();
   updateStatus();
   console.log('Редактор технических чертежей загружен!');
+
+  // Инициализация отслеживания клавиши Alt
+  setupAltKeyTracking();
 });
 
 function initializeCanvas() {
@@ -218,6 +222,30 @@ function initializeCanvas() {
   setupCanvasEvents();
   setupKeyboardShortcuts();
   initializeModals();
+}
+
+// ==================== ОТСЛЕЖИВАНИЕ КЛАВИШИ ALT ====================
+function setupAltKeyTracking() {
+  document.addEventListener('keydown', function (event) {
+    if (event.key === 'Alt' || event.keyCode === 18) {
+      altKeyPressed = true;
+      if (isDrawingLine) {
+        canvas.defaultCursor = 'crosshair';
+        canvas.renderAll();
+        showNotification('Alt нажата: режим привязки к краям объектов активирован', 'info', 1500);
+      }
+    }
+  });
+
+  document.addEventListener('keyup', function (event) {
+    if (event.key === 'Alt' || event.keyCode === 18) {
+      altKeyPressed = false;
+      if (isDrawingLine) {
+        canvas.defaultCursor = 'crosshair';
+        canvas.renderAll();
+      }
+    }
+  });
 }
 
 // ==================== РЕЖИМЫ ====================
@@ -333,7 +361,6 @@ function activateImagePlacementMode(image) {
   canvas.defaultCursor = 'crosshair';
   canvas.selection = false;
 
-  showNotification(`Режим добавления: ${image.name}. Shift+клик для размещения`, 'info');
   showNotification(`Режим добавления: ${image.name}. Кликните на холст для размещения.`, 'info');
 }
 
@@ -350,8 +377,9 @@ function activateLineDrawing() {
   const modeText = isContinuousLineMode
     ? 'Режим рисования линии (непрерывный). Кликните для начала, затем для конца.'
     : 'Режим рисования линии. Кликните для начала, затем для конца.';
+  const altHint = ' Удерживайте Alt для привязки к краям объектов.';
 
-  showNotification(modeText + ' ESC для отмены.', 'info');
+  showNotification(modeText + altHint + ' ESC для отмены.', 'info');
 }
 
 function toggleContinuousMode() {
@@ -423,6 +451,10 @@ function updateStatus() {
     statusText += ' | 🎯 <strong>Ручной режим</strong>';
   }
 
+  if (altKeyPressed) {
+    statusText += ' | <strong>Alt: Привязка к объектам</strong>';
+  }
+
   document.getElementById('status').innerHTML = statusText;
 }
 
@@ -482,7 +514,6 @@ function addImageAtPosition(x, y) {
     crossOrigin: 'anonymous'
   });
 }
-
 
 // Новая функция для принудительного разделения всех линий по центрам объектов
 function splitAllLinesAtObjectCenters() {
@@ -558,11 +589,32 @@ function setupCanvasEvents() {
       return;
     }
 
-    // Рисование линии
+    // Рисование линии с привязкой к краю объекта при нажатом Alt
     if (isDrawingLine) {
       let snappedX, snappedY;
+      let startPointFromObject = null;
 
-      if (isContinuousLineMode && lastLineEndPoint) {
+      // Если нажат Alt и есть объект под курсором
+      if (altKeyPressed && options.target) {
+        const targetObject = options.target;
+        const objectEdgePoint = findClosestPointOnObjectEdge(targetObject, pointer);
+
+        if (objectEdgePoint) {
+          startPointFromObject = {
+            x: objectEdgePoint.x,
+            y: objectEdgePoint.y,
+            object: targetObject,
+            edgePoint: true
+          };
+
+          snappedX = objectEdgePoint.x;
+          snappedY = objectEdgePoint.y;
+
+          showNotification(`Линия начинается от края объекта "${targetObject.properties?.name || targetObject.type}"`, 'info', 2000);
+        }
+      }
+
+      if (isContinuousLineMode && lastLineEndPoint && !startPointFromObject) {
         const distanceToLastPoint = Math.sqrt(
           Math.pow(pointer.x - lastLineEndPoint.x, 2) +
           Math.pow(pointer.y - lastLineEndPoint.y, 2)
@@ -575,13 +627,18 @@ function setupCanvasEvents() {
           snappedX = snapToGrid(pointer.x, gridSize);
           snappedY = snapToGrid(pointer.y, gridSize);
         }
-      } else {
+      } else if (!startPointFromObject) {
         snappedX = snapToGrid(pointer.x, gridSize);
         snappedY = snapToGrid(pointer.y, gridSize);
       }
 
       if (!lineStartPoint) {
-        lineStartPoint = {x: snappedX, y: snappedY};
+        lineStartPoint = {
+          x: snappedX,
+          y: snappedY,
+          ...startPointFromObject
+        };
+
         previewLine = new fabric.Line([
           lineStartPoint.x, lineStartPoint.y, snappedX, snappedY
         ], {
@@ -591,6 +648,13 @@ function setupCanvasEvents() {
           selectable: false,
           evented: false
         });
+
+        // Добавляем специальное свойство если линия начинается от объекта
+        if (startPointFromObject) {
+          previewLine.lineStartsFromObject = true;
+          previewLine.startObject = startPointFromObject.object;
+        }
+
         canvas.add(previewLine);
       } else {
         const length = Math.sqrt(
@@ -619,6 +683,23 @@ function setupCanvasEvents() {
             endPoint: {x: snappedX, y: snappedY}
           }
         });
+
+        // Сохраняем информацию о привязке к объекту
+        if (lineStartPoint.object) {
+          finalLine.lineStartsFromObject = true;
+          finalLine.startObject = lineStartPoint.object;
+          finalLine.properties.startsFromObject = {
+            objectId: lineStartPoint.object.id || lineStartPoint.object._id,
+            objectType: lineStartPoint.object.type,
+            objectName: lineStartPoint.object.properties?.name || 'Объект',
+            edgePoint: lineStartPoint.edgePoint || false
+          };
+
+          // Создаем точку пересечения в месте начала линии
+          setTimeout(() => {
+            createIntersectionPointForLineStart(finalLine);
+          }, 10);
+        }
 
         saveToUndoStack();
         canvas.add(finalLine);
@@ -681,6 +762,30 @@ function setupCanvasEvents() {
       previewLine.set({x2: snappedX, y2: snappedY});
       previewLine.setCoords();
       canvas.requestRenderAll();
+
+      // Подсветка объектов при нажатом Alt
+      if (altKeyPressed) {
+        canvas.forEachObject(obj => {
+          if (obj.type !== 'line' && obj.id !== 'grid-group' && obj.id !== 'grid-line') {
+            obj.set('stroke', '#4A00E0');
+            obj.set('strokeWidth', 2);
+          }
+        });
+        canvas.renderAll();
+      }
+    }
+  });
+
+  // Сброс подсветки объектов
+  canvas.on('mouse:out', function () {
+    if (altKeyPressed && isDrawingLine) {
+      canvas.forEachObject(obj => {
+        if (obj.type !== 'line' && obj.id !== 'grid-group' && obj.id !== 'grid-line') {
+          obj.set('stroke', null);
+          obj.set('strokeWidth', 0);
+        }
+      });
+      canvas.renderAll();
     }
   });
 
@@ -689,9 +794,8 @@ function setupCanvasEvents() {
   canvas.on('selection:updated', updatePropertiesPanel);
   canvas.on('selection:cleared', updatePropertiesPanel);
 
-  // Добавьте этот обработчик в конец функции
+  // Поднимаем точки пересечения на верхний слой
   canvas.on('object:added', function (e) {
-    // Если добавлен не объект точки пересечения, поднимаем точки наверх
     if (e.target && e.target.id !== 'intersection-point' && e.target.id !== 'intersection-point-label') {
       setTimeout(() => {
         bringIntersectionPointsToFront();
@@ -700,8 +804,179 @@ function setupCanvasEvents() {
   });
 }
 
+// Новая функция для нахождения ближайшей точки на краю объекта
+function findClosestPointOnObjectEdge(object, point) {
+  if (!object || !point) return null;
+
+  const objRect = getObjectRect(object);
+  const center = getObjectCenter(object);
+
+  // Для прямоугольных объектов (изображения, прямоугольники)
+  if (object.type === 'image' || object.type === 'rect') {
+    // Находим ближайшую точку на прямоугольнике
+    const left = objRect.left;
+    const right = objRect.right;
+    const top = objRect.top;
+    const bottom = objRect.bottom;
+
+    // Проверяем, находится ли точка внутри объекта
+    const isInside = point.x >= left && point.x <= right && point.y >= top && point.y <= bottom;
+
+    if (isInside) {
+      // Если точка внутри, выходим на ближайший край
+      const distToLeft = Math.abs(point.x - left);
+      const distToRight = Math.abs(point.x - right);
+      const distToTop = Math.abs(point.y - top);
+      const distToBottom = Math.abs(point.y - bottom);
+
+      const minDist = Math.min(distToLeft, distToRight, distToTop, distToBottom);
+
+      if (minDist === distToLeft) {
+        return {x: left, y: point.y};
+      } else if (minDist === distToRight) {
+        return {x: right, y: point.y};
+      } else if (minDist === distToTop) {
+        return {x: point.x, y: top};
+      } else {
+        return {x: point.x, y: bottom};
+      }
+    } else {
+      // Если точка снаружи, проектируем на прямоугольник
+      let closestX = Math.max(left, Math.min(point.x, right));
+      let closestY = Math.max(top, Math.min(point.y, bottom));
+
+      // Определяем, к какой стороне ближе
+      const distToLeft = Math.abs(point.x - left);
+      const distToRight = Math.abs(point.x - right);
+      const distToTop = Math.abs(point.y - top);
+      const distToBottom = Math.abs(point.y - bottom);
+
+      const minDist = Math.min(distToLeft, distToRight, distToTop, distToBottom);
+
+      if (minDist === distToLeft || minDist === distToRight) {
+        closestY = point.y;
+      } else {
+        closestX = point.x;
+      }
+
+      // Ограничиваем точку границами прямоугольника
+      closestX = Math.max(left, Math.min(closestX, right));
+      closestY = Math.max(top, Math.min(closestY, bottom));
+
+      return {x: closestX, y: closestY};
+    }
+  }
+
+  // Для кругов
+  if (object.type === 'circle') {
+    const radius = object.radius * object.scaleX;
+    const dx = point.x - center.x;
+    const dy = point.y - center.y;
+    const distance = Math.sqrt(dx * dx + dy * dy);
+
+    if (distance === 0) {
+      return {x: center.x + radius, y: center.y};
+    }
+
+    const scale = radius / distance;
+    return {
+      x: center.x + dx * scale,
+      y: center.y + dy * scale
+    };
+  }
+
+  // Для других объектов используем bounding box
+  return {
+    x: Math.max(objRect.left, Math.min(point.x, objRect.right)),
+    y: Math.max(objRect.top, Math.min(point.y, objRect.bottom))
+  };
+}
+
+// Новая функция для создания точки пересечения в начале линии
+function createIntersectionPointForLineStart(line) {
+  if (!line.lineStartsFromObject || !line.startObject) return;
+
+  const startPoint = {
+    x: line.x1,
+    y: line.y1
+  };
+
+  // Проверяем, нет ли уже такой точки пересечения
+  const existingPoint = intersectionPoints.find(p =>
+    Math.abs(p.x - startPoint.x) < 5 && Math.abs(p.y - startPoint.y) < 5
+  );
+
+  if (existingPoint) return;
+
+  // Создаем новую точку пересечения
+  const interIndex = intersectionPoints.length;
+  const interData = {
+    x: startPoint.x,
+    y: startPoint.y,
+    line1: line,
+    object: line.startObject,
+    type: 'object-edge',
+    objectCenter: getObjectCenter(line.startObject),
+    edgePoint: true
+  };
+
+  intersectionPoints.push(interData);
+
+  // Создаем визуальную точку (оранжевая для краев)
+  createIntersectionPoint(startPoint.x, startPoint.y, interIndex, interData, '#ff9500');
+}
+
+// Обновленная функция createIntersectionPoint с поддержкой пользовательского цвета
+function createIntersectionPoint(x, y, index, intersectionData, customColor = '#ff4757') {
+  const circle = new fabric.Circle({
+    left: x - 6,
+    top: y - 6,
+    radius: 6,
+    fill: customColor,
+    stroke: customColor,
+    strokeWidth: 1,
+    selectable: true,
+    hasControls: false,
+    hasBorders: false,
+    evented: true,
+    originX: 'center',
+    originY: 'center',
+    id: 'intersection-point',
+    pointIndex: index,
+    pointData: intersectionData,
+    hoverCursor: 'pointer'
+  });
+
+  const text = new fabric.Text((index + 1).toString(), {
+    left: x,
+    top: y,
+    fontSize: 10,
+    fill: 'white',
+    fontWeight: 'bold',
+    selectable: false,
+    evented: false,
+    originX: 'center',
+    originY: 'center',
+    id: 'intersection-point-label'
+  });
+
+  circle.on('mousedown', function (e) {
+    if (e.button === 1) {
+      showIntersectionPointInfo(index);
+    }
+  });
+
+  canvas.add(circle);
+  canvas.add(text);
+  circle.bringToFront();
+  text.bringToFront();
+
+  intersectionVisuals.push({circle, text});
+
+  return circle;
+}
+
 // ==================== ГОРЯЧИЕ КЛАВИШИ ====================
-// Также обновляем горячие клавиши
 function setupKeyboardShortcuts() {
   document.addEventListener('keydown', function (event) {
     // ESC - отмена
@@ -748,7 +1023,7 @@ function setupKeyboardShortcuts() {
         event.preventDefault();
         splitAllLines();
         break;
-      case 'c': // Новая горячая клавиша для разделения по центрам
+      case 'c':
         event.preventDefault();
         splitAllLinesAtObjectCenters();
         break;
@@ -766,7 +1041,7 @@ function setupKeyboardShortcuts() {
   document.addEventListener('click', hideContextMenu);
 }
 
-// Показать модальное окно свойств объекта
+// ==================== МОДАЛЬНОЕ ОКНО СВОЙСТВ ОБЪЕКТА ====================
 function showObjectPropertiesModal() {
   const activeObject = canvas.getActiveObject();
   if (!activeObject) {
@@ -778,7 +1053,6 @@ function showObjectPropertiesModal() {
   currentEditingObjectType = activeObject.type;
   const props = activeObject.properties || {};
 
-  // Заполняем форму в зависимости от типа объекта
   if (activeObject.type === 'image') {
     document.getElementById('objPropertyName').value = props.name || '';
     document.getElementById('objPropertyType').value = props.type || 'custom';
@@ -792,14 +1066,11 @@ function showObjectPropertiesModal() {
     document.getElementById('objPropertyNotes').value = props.notes || '';
     document.getElementById('objPropertyCustomData').value = JSON.stringify(props.customData || {}, null, 2);
 
-    // Показываем только нужные поля для изображений
     document.querySelectorAll('.form-group').forEach(el => el.style.display = 'block');
   } else if (activeObject.type === 'line') {
-    // Для линий показываем специальную форму
     showLinePropertiesModal();
     return;
   } else {
-    // Для других типов объектов
     document.getElementById('objPropertyName').value = props.name || activeObject.type || '';
     document.getElementById('objPropertyType').value = props.type || 'custom';
     document.getElementById('objPropertyX').value = Math.round(activeObject.left);
@@ -823,14 +1094,12 @@ function showObjectPropertiesModal() {
   document.getElementById('objectPropertiesModal').style.display = 'flex';
 }
 
-// Закрыть модальное окно свойств объекта
 function closeObjectPropertiesModal() {
   document.getElementById('objectPropertiesModal').style.display = 'none';
   currentEditingObject = null;
   currentEditingObjectType = null;
 }
 
-// Применить свойства объекта
 function applyObjectProperties() {
   if (!currentEditingObject) return;
 
@@ -843,7 +1112,6 @@ function applyObjectProperties() {
       notes: document.getElementById('objPropertyNotes').value.trim() || null
     };
 
-    // Парсим пользовательские данные
     const customDataText = document.getElementById('objPropertyCustomData').value.trim();
     if (customDataText) {
       try {
@@ -854,7 +1122,6 @@ function applyObjectProperties() {
       }
     }
 
-    // Сохраняем существующие свойства
     const oldProps = currentEditingObject.properties || {};
     if (oldProps.imageId) newProperties.imageId = oldProps.imageId;
     if (oldProps.imagePath) newProperties.imagePath = oldProps.imagePath;
@@ -864,7 +1131,6 @@ function applyObjectProperties() {
     if (oldProps.W !== undefined) newProperties.W = oldProps.W;
     if (oldProps.length !== undefined) newProperties.length = oldProps.length;
 
-    // Применяем геометрические свойства
     const updates = {
       properties: newProperties,
       left: parseInt(document.getElementById('objPropertyX').value) || currentEditingObject.left,
@@ -873,7 +1139,6 @@ function applyObjectProperties() {
       opacity: (parseInt(document.getElementById('objPropertyOpacity').value) || 100) / 100
     };
 
-    // Для изображений применяем масштабирование
     if (currentEditingObject.type === 'image') {
       const newWidth = parseInt(document.getElementById('objPropertyWidth').value);
       const newHeight = parseInt(document.getElementById('objPropertyHeight').value);
@@ -899,7 +1164,6 @@ function applyObjectProperties() {
   }
 }
 
-// Удалить текущий объект
 function deleteCurrentObject() {
   if (!currentEditingObject || !confirm('Удалить этот объект?')) return;
 
@@ -947,6 +1211,24 @@ function updatePropertiesPanel() {
         <div class="property-value">${Math.round(length)}px</div>
       </div>
     `;
+
+    // Показываем информацию о привязке к объекту
+    if (activeObj.lineStartsFromObject && activeObj.startObject) {
+      const objProps = activeObj.startObject.properties || {};
+      content += `
+        <div class="property-group">
+          <h4>📌 Привязка к объекту</h4>
+          <div class="property-row">
+            <div class="property-label">Начинается от:</div>
+            <div class="property-value">${objProps.name || 'Объект'}</div>
+          </div>
+          <div class="property-row">
+            <div class="property-label">Тип привязки:</div>
+            <div class="property-value">${activeObj.properties?.startsFromObject?.edgePoint ? 'Край объекта' : 'Центр объекта'}</div>
+          </div>
+        </div>
+      `;
+    }
 
     if (activeObj.properties) {
       content += `
@@ -1048,7 +1330,6 @@ function updatePropertiesPanel() {
       </div>
     `;
   } else {
-    // Для других типов объектов
     const props = activeObj.properties || {};
     content += `
       <div class="property-row">
@@ -1074,53 +1355,23 @@ function updatePropertiesPanel() {
   propsContent.innerHTML = content;
 }
 
-// Добавить свойство Notes ко всем объектам при сохранении
-function saveDrawing() {
-  // Сохраняем notes для всех объектов
-  canvas.getObjects().forEach(obj => {
-    if (obj.type !== 'image' && obj.properties && !obj.properties.notes) {
-      obj.properties.notes = '';
-    }
-  });
-
-  const json = JSON.stringify(canvas.toJSON(['id', 'properties', 'pointIndex', 'pointData']));
-  localStorage.setItem('fabricDrawing', json);
-
-  const blob = new Blob([json], {type: 'application/json'});
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `чертеж-${new Date().toISOString().slice(0, 10)}.json`;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
-
-  const count = canvas.getObjects().filter(obj => obj.id !== 'grid-group' && obj.id !== 'grid-line').length;
-  showNotification(`Чертеж сохранен! (${count} объектов)`, 'success');
-}
-
 // ==================== ИНИЦИАЛИЗАЦИЯ МОДАЛЬНЫХ ОКОН ====================
 function initializeModals() {
-  // Форма свойств линии
   document.getElementById('linePropertiesForm')?.addEventListener('submit', function (e) {
     e.preventDefault();
     applyLineProperties();
   });
 
-  // Форма добавления изображения
   document.getElementById('addImageForm')?.addEventListener('submit', function (e) {
     e.preventDefault();
     addNewImage();
   });
 
-  // Форма свойств объекта
   document.getElementById('objectPropertiesForm')?.addEventListener('submit', function (e) {
     e.preventDefault();
     applyObjectProperties();
   });
 
-  // Обновление значения непрозрачности при движении ползунка
   const opacitySlider = document.getElementById('objPropertyOpacity');
   const opacityValue = document.getElementById('opacityValue');
 
@@ -1130,7 +1381,6 @@ function initializeModals() {
     });
   }
 
-  // Закрытие модальных окон при клике вне их области
   document.querySelectorAll('.modal').forEach(modal => {
     modal.addEventListener('click', function (e) {
       if (e.target === modal) {
@@ -1147,7 +1397,6 @@ function initializeModals() {
     });
   });
 
-  // Закрытие по клавише ESC
   document.addEventListener('keydown', function (e) {
     if (e.key === 'Escape') {
       closeLinePropertiesModal();
@@ -1196,11 +1445,11 @@ function applyLineProperties() {
     W: parseFloat(document.getElementById('propertyW').value)
   };
 
-  // Сохраняем существующие свойства
   const oldProps = currentEditingLine.properties || {};
   if (oldProps.length) newProperties.length = oldProps.length;
   if (oldProps.startPoint) newProperties.startPoint = oldProps.startPoint;
   if (oldProps.endPoint) newProperties.endPoint = oldProps.endPoint;
+  if (oldProps.startsFromObject) newProperties.startsFromObject = oldProps.startsFromObject;
 
   saveToUndoStack();
   currentEditingLine.set({
@@ -1255,29 +1504,19 @@ function addNewImage() {
 }
 
 // ==================== ФУНКЦИИ РАЗДЕЛЕНИЯ ЛИНИЙ ====================
-// Обновленная функция splitAllLines для работы с новой логикой
 function splitAllLines() {
-  // Очищаем предыдущие точки
   clearIntersectionPoints();
-
-  // Находим все пересечения
   const intersections = findAllIntersections();
-
-  // Сохраняем информацию о точках
   intersectionPoints = intersections;
 
-  // Создаем визуальные точки
   intersections.forEach((inter, index) => {
     createIntersectionPoint(inter.x, inter.y, index, inter);
   });
 
-  // Разделяем линии для всех пересечений (кроме центров объектов, если в ручном режиме)
   intersections.forEach((inter, index) => {
     if (inter.line1 && inter.line2) {
-      // Пересечение линии с линией - всегда разделяем
       splitLinesAtPoint(inter);
     } else if (inter.line1 && inter.object) {
-      // Пересечение линии с объектом - разделяем только если не в ручном режиме
       if (lineSplitMode !== 'MANUAL' || autoSplitMode) {
         const splitResult = splitLineAtPoint(inter.line1, {
           x: inter.x,
@@ -1303,7 +1542,6 @@ function splitAllLines() {
   }
 }
 
-// Обновленная функция поиска всех пересечений (добавляем пересечения с центрами объектов)
 function findAllIntersections() {
   const lines = canvas.getObjects().filter(obj =>
     obj.type === 'line' && obj.id !== 'grid-line'
@@ -1322,14 +1560,13 @@ function findAllIntersections() {
     }
   }
 
-  // Пересечения линий с центрами объектов (новый тип пересечений)
+  // Пересечения линий с центрами объектов
   lines.forEach(line => {
     images.forEach(image => {
       const center = getObjectCenter(image);
       const closestPoint = findClosestPointOnLine(center, line);
 
       if (closestPoint.param >= 0 && closestPoint.param <= 1) {
-        // Проверяем, находится ли точка в пределах объекта
         const rect = getObjectRect(image);
         const tolerance = Math.max(image.width * image.scaleX, image.height * image.scaleY) / 2;
 
@@ -1356,7 +1593,6 @@ function findAllIntersections() {
   return intersections;
 }
 
-// Функция для определения пересечения двух отрезков
 function lineIntersection(line1, line2) {
   if (line1 === line2) return null;
 
@@ -1365,10 +1601,8 @@ function lineIntersection(line1, line2) {
   const x3 = line2.x1, y3 = line2.y1;
   const x4 = line2.x2, y4 = line2.y2;
 
-  // Векторные вычисления
   const denominator = (y4 - y3) * (x2 - x1) - (x4 - x3) * (y2 - y1);
 
-  // Параллельны или совпадают
   if (Math.abs(denominator) < 0.000001) {
     return null;
   }
@@ -1376,13 +1610,9 @@ function lineIntersection(line1, line2) {
   const ua = ((x4 - x3) * (y1 - y3) - (y4 - y3) * (x1 - x3)) / denominator;
   const ub = ((x2 - x1) * (y1 - y3) - (y2 - y1) * (x1 - x3)) / denominator;
 
-  // Проверяем, находится ли точка пересечения в пределах обоих отрезков
   if (ua >= 0 && ua <= 1 && ub >= 0 && ub <= 1) {
     const x = x1 + ua * (x2 - x1);
     const y = y1 + ua * (y2 - y1);
-
-    // НЕ игнорируем пересечения вблизи концов - они ВАЖНЫ!
-    // Убрали проверку на ua < 0.05 || ua > 0.95 и т.д.
 
     return {
       x: Math.round(x * 100) / 100,
@@ -1397,7 +1627,6 @@ function lineIntersection(line1, line2) {
   return null;
 }
 
-// Новая функция для нахождения центра объекта
 function getObjectCenter(obj) {
   const width = obj.width * obj.scaleX;
   const height = obj.height * obj.scaleY;
@@ -1410,7 +1639,6 @@ function getObjectCenter(obj) {
   };
 }
 
-// Функция для нахождения проекции точки на линию (ближайшей точки на линии к заданной точке)
 function findClosestPointOnLine(point, line) {
   const x1 = line.x1;
   const y1 = line.y1;
@@ -1450,8 +1678,6 @@ function findClosestPointOnLine(point, line) {
   };
 }
 
-
-// Получение границ объекта
 function getObjectRect(obj) {
   const width = obj.width * obj.scaleX;
   const height = obj.height * obj.scaleY;
@@ -1464,7 +1690,6 @@ function getObjectRect(obj) {
   };
 }
 
-// Поиск пересечений линии с прямоугольником
 function getLineRectIntersections(line, rect) {
   const intersections = [];
   const segments = [
@@ -1502,7 +1727,6 @@ function getLineRectIntersections(line, rect) {
   return intersections;
 }
 
-// Пересечение двух отрезков
 function lineSegmentIntersection(line1, segment) {
   const x1 = line1.x1, y1 = line1.y1;
   const x2 = line1.x2, y2 = line1.y2;
@@ -1527,7 +1751,6 @@ function lineSegmentIntersection(line1, segment) {
   return null;
 }
 
-// Поднять все точки пересечения на передний план
 function bringIntersectionPointsToFront() {
   intersectionVisuals.forEach(visual => {
     if (visual.circle && visual.text) {
@@ -1537,64 +1760,9 @@ function bringIntersectionPointsToFront() {
   });
 }
 
-// Создание визуальной точки разделения
-function createIntersectionPoint(x, y, index, intersectionData) {
-  const circle = new fabric.Circle({
-    left: x - 6,
-    top: y - 6,
-    radius: 6,
-    fill: '#ff4757',
-    stroke: '#ff4757',
-    strokeWidth: 1,
-    selectable: true,
-    hasControls: false,
-    hasBorders: false,
-    evented: true,
-    originX: 'center',
-    originY: 'center',
-    id: 'intersection-point',
-    pointIndex: index,
-    pointData: intersectionData,
-    hoverCursor: 'pointer'
-  });
-
-  const text = new fabric.Text((index + 1).toString(), {
-    left: x,
-    top: y,
-    fontSize: 10,
-    fill: 'white',
-    fontWeight: 'bold',
-    selectable: false,
-    evented: false,
-    originX: 'center',
-    originY: 'center',
-    id: 'intersection-point-label'
-  });
-
-  circle.on('mousedown', function (e) {
-    if (e.button === 1) {
-      showIntersectionPointInfo(index);
-    }
-  });
-
-  // Добавляем и сразу поднимаем на верхний слой
-  canvas.add(circle);
-  canvas.add(text);
-
-  // ВАЖНО: поднимаем точку на передний план
-  circle.bringToFront();
-  text.bringToFront();
-
-  intersectionVisuals.push({circle, text});
-
-  return circle;
-}
-
-// Разделение линий в точке пересечения
 function splitLinesAtPoint(intersection) {
   const results = [];
 
-  // Разделяем первую линию
   if (intersection.line1) {
     const splitResult1 = splitLineAtPoint(intersection.line1, {
       x: intersection.x,
@@ -1612,7 +1780,6 @@ function splitLinesAtPoint(intersection) {
     }
   }
 
-  // Разделяем вторую линию
   if (intersection.line2) {
     const splitResult2 = splitLineAtPoint(intersection.line2, {
       x: intersection.x,
@@ -1633,9 +1800,7 @@ function splitLinesAtPoint(intersection) {
   return results;
 }
 
-// Разделение конкретной линии в точке
 function splitLineAtPoint(line, point) {
-  // Вычисляем расстояния от точки до концов линии
   const dx1 = point.x - line.x1;
   const dy1 = point.y - line.y1;
   const dx2 = point.x - line.x2;
@@ -1644,12 +1809,10 @@ function splitLineAtPoint(line, point) {
   const distance1 = Math.sqrt(dx1 * dx1 + dy1 * dy1);
   const distance2 = Math.sqrt(dx2 * dx2 + dy2 * dy2);
 
-  // Не разбиваем, если точка совпадает с концом линии (с учетом небольшого допуска)
   if (distance1 < 0.1 || distance2 < 0.1) {
     return null;
   }
 
-  // Не разбиваем, если сегменты будут слишком короткими
   const totalLength = Math.sqrt(
     Math.pow(line.x2 - line.x1, 2) +
     Math.pow(line.y2 - line.y1, 2)
@@ -1659,8 +1822,6 @@ function splitLineAtPoint(line, point) {
     return null;
   }
 
-  // Проверяем, что точка действительно лежит на линии
-  // Используем параметрическое уравнение линии
   const lineVector = {
     x: line.x2 - line.x1,
     y: line.y2 - line.y1
@@ -1674,14 +1835,12 @@ function splitLineAtPoint(line, point) {
   const dotProduct = lineVector.x * pointVector.x + lineVector.y * pointVector.y;
   const lineLengthSquared = lineVector.x * lineVector.x + lineVector.y * lineVector.y;
 
-  // Параметр точки на линии (0 = начало, 1 = конец)
   const t = dotProduct / lineLengthSquared;
 
   if (t < 0 || t > 1) {
-    return null; // Точка не на линии
+    return null;
   }
 
-  // Создаем первую часть линии
   const line1 = new fabric.Line([
     line.x1, line.y1,
     point.x, point.y
@@ -1697,7 +1856,6 @@ function splitLineAtPoint(line, point) {
     properties: {...line.properties}
   });
 
-  // Создаем вторую часть линии
   const line2 = new fabric.Line([
     point.x, point.y,
     line.x2, line.y2
@@ -1713,14 +1871,12 @@ function splitLineAtPoint(line, point) {
     properties: {...line.properties}
   });
 
-  // Обновляем длину в свойствах
   if (line1.properties) line1.properties.length = distance1;
   if (line2.properties) line2.properties.length = distance2;
 
   return {line1, line2};
 }
 
-// Разделение линий по изображению
 // Переписанная функция разделения линий по изображению (с центром объекта)
 function splitLinesAtImagePosition(image) {
   const lines = canvas.getObjects().filter(obj =>
@@ -1730,25 +1886,18 @@ function splitLinesAtImagePosition(image) {
   let splitCount = 0;
 
   lines.forEach(line => {
-    // Получаем центр объекта
     const center = getObjectCenter(image);
-
-    // Находим ближайшую точку на линии к центру объекта
     const closestPoint = findClosestPointOnLine(center, line);
 
-    // Проверяем, что точка находится в пределах линии (не за ее концами)
     if (closestPoint.param >= 0 && closestPoint.param <= 1) {
-      // Проверяем, что точка действительно находится внутри объекта или очень близко к нему
       const rect = getObjectRect(image);
       const tolerance = Math.max(image.width * image.scaleX, image.height * image.scaleY) / 2;
 
-      // Проверяем расстояние от точки до центра объекта
       const distanceToCenter = Math.sqrt(
         Math.pow(closestPoint.x - center.x, 2) +
         Math.pow(closestPoint.y - center.y, 2)
       );
 
-      // Если точка достаточно близко к центру объекта, разделяем линию
       if (distanceToCenter <= tolerance) {
         const splitResult = splitLineAtPoint(line, {
           x: closestPoint.x,
@@ -1762,7 +1911,6 @@ function splitLinesAtImagePosition(image) {
           canvas.add(splitResult.line2);
           splitCount++;
 
-          // Создаем точку пересечения в центре объекта
           const interIndex = intersectionPoints.length;
           const interData = {
             x: closestPoint.x,
@@ -1791,7 +1939,6 @@ function splitLinesAtImagePosition(image) {
   canvas.renderAll();
 }
 
-
 // ==================== МОДАЛЬНОЕ ОКНО ИНФОРМАЦИИ О ТОЧКЕ ====================
 function showIntersectionPointInfo(pointIndex) {
   const pointData = intersectionPoints[pointIndex];
@@ -1810,7 +1957,6 @@ function showIntersectionPointInfo(pointIndex) {
   const objectsAtPoint = [];
   const threshold = 5;
 
-  // Находим линии, начинающиеся/заканчивающиеся в точке
   allLines.forEach(line => {
     const startDist = Math.sqrt(Math.pow(line.x1 - pointData.x, 2) + Math.pow(line.y1 - pointData.y, 2));
     const endDist = Math.sqrt(Math.pow(line.x2 - pointData.x, 2) + Math.pow(line.y2 - pointData.y, 2));
@@ -1830,7 +1976,6 @@ function showIntersectionPointInfo(pointIndex) {
     }
   });
 
-  // Находим объекты в точке
   allObjects.forEach(obj => {
     const objRect = getObjectRect(obj);
     if (pointData.x >= objRect.left && pointData.x <= objRect.right &&
@@ -1853,6 +1998,8 @@ function showIntersectionPointInfo(pointIndex) {
 
   if (pointData.type === 'object-center') {
     html += 'Центр объекта';
+  } else if (pointData.type === 'object-edge') {
+    html += 'Край объекта';
   } else if (pointData.line1 && pointData.line2) {
     html += 'Пересечение линий';
   } else {
@@ -1870,7 +2017,6 @@ function showIntersectionPointInfo(pointIndex) {
       </div>
   `;
 
-  // Если это центр объекта, показываем дополнительную информацию
   if (pointData.type === 'object-center' && pointData.object) {
     const obj = pointData.object;
     const center = getObjectCenter(obj);
@@ -1897,9 +2043,25 @@ function showIntersectionPointInfo(pointIndex) {
         </div>
       </div>
     `;
+  } else if (pointData.type === 'object-edge' && pointData.object) {
+    const obj = pointData.object;
+    const props = obj.properties || {};
+
+    html += `
+      <div class="property-group">
+        <h4>🎯 Край объекта:</h4>
+        <div class="property-row">
+          <div class="property-label">Объект:</div>
+          <div class="property-value">${props.name || 'Объект'}</div>
+        </div>
+        <div class="property-row">
+          <div class="property-label">Тип привязки:</div>
+          <div class="property-value">Край объекта (Alt+рисование)</div>
+        </div>
+      </div>
+    `;
   }
 
-  // Информация о самом пересечении
   if (pointData.line1 && pointData.line2) {
     html += `
       <div class="property-group">
@@ -1939,7 +2101,6 @@ function showIntersectionPointInfo(pointIndex) {
     `;
   }
 
-  // Отображаем объекты в точке
   if (objectsAtPoint.length > 0) {
     html += `
       <div class="property-group">
@@ -2041,7 +2202,6 @@ function showIntersectionPointInfo(pointIndex) {
     document.getElementById('intersectionPointModal').style.display = 'flex';
   }
 
-  // Отображаем линии, начинающиеся в точке
   if (linesStartingHere.length > 0) {
     html += `
       <div class="property-group">
@@ -2139,7 +2299,6 @@ function showIntersectionPointInfo(pointIndex) {
     html += `</div>`;
   }
 
-  // Отображаем линии, заканчивающиеся в точке
   if (linesEndingHere.length > 0) {
     html += `
       <div class="property-group">
@@ -2289,13 +2448,11 @@ function showIntersectionPointInfo(pointIndex) {
 
     if (note !== null) {
       pointData.notes = note;
-      // Обновляем визуальный элемент точки
       const visual = intersectionVisuals[pointIndex];
       if (visual && visual.circle) {
         visual.circle.set('pointData', pointData);
       }
       showNotification('Заметка добавлена', 'success');
-      // Перезагружаем информацию о точке
       showIntersectionPointInfo(pointIndex);
     }
   };
@@ -2311,7 +2468,6 @@ function showIntersectionPointInfo(pointIndex) {
       pointData.x = parseFloat(newX);
       pointData.y = parseFloat(newY);
 
-      // Обновляем визуальную точку
       const visual = intersectionVisuals[pointIndex];
       if (visual && visual.circle && visual.text) {
         visual.circle.set({
@@ -2370,7 +2526,6 @@ function showIntersectionPointInfo(pointIndex) {
       canvas.setActiveObject(object);
       canvas.renderAll();
 
-      // Центрируем камеру на объекте
       const zoomLevel = 2;
       canvas.setZoom(zoomLevel);
       const centerX = object.left - canvas.width / (2 * zoomLevel);
@@ -2409,7 +2564,6 @@ function showIntersectionPointInfo(pointIndex) {
         canvas.add(splitResult.line2);
         canvas.renderAll();
 
-        // Обновляем точки пересечения
         setTimeout(() => {
           clearIntersectionPoints();
           const intersections = findAllIntersections();
@@ -2446,7 +2600,7 @@ function clearIntersectionPoints() {
 
 // ==================== СОХРАНЕНИЕ И ЗАГРУЗКА ====================
 function saveDrawing() {
-  const json = JSON.stringify(canvas.toJSON(['id', 'properties']));
+  const json = JSON.stringify(canvas.toJSON(['id', 'properties', 'pointIndex', 'pointData', 'lineStartsFromObject', 'startObject']));
   localStorage.setItem('fabricDrawing', json);
 
   const blob = new Blob([json], {type: 'application/json'});
@@ -2481,6 +2635,19 @@ function loadDrawing() {
         drawGrid(20);
 
         canvas.loadFromJSON(json, function () {
+          // Восстанавливаем связи объектов после загрузки
+          canvas.getObjects().forEach(obj => {
+            if (obj.lineStartsFromObject && obj.properties?.startsFromObject?.objectId) {
+              const startObject = canvas.getObjects().find(o =>
+                (o.id === obj.properties.startsFromObject.objectId ||
+                  o._id === obj.properties.startsFromObject.objectId)
+              );
+              if (startObject) {
+                obj.startObject = startObject;
+              }
+            }
+          });
+
           canvas.renderAll();
           updatePropertiesPanel();
           updateStatus();
@@ -2639,7 +2806,7 @@ function updateUndoRedoButtons() {
 }
 
 // ==================== УВЕДОМЛЕНИЯ ====================
-function showNotification(message, type = 'info') {
+function showNotification(message, type = 'info', duration = 3000) {
   const container = document.getElementById('notificationContainer');
   const notification = document.createElement('div');
   notification.className = `notification ${type}`;
@@ -2652,7 +2819,7 @@ function showNotification(message, type = 'info') {
 
   setTimeout(() => {
     notification.remove();
-  }, 3000);
+  }, duration);
 }
 
 function getNotificationIcon(type) {
