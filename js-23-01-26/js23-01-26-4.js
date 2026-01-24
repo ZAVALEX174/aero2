@@ -3050,4 +3050,24 @@ document.addEventListener('DOMContentLoaded', function () {
       e.preventDefault();
     });
   }
+
+  // ==================== ОБНОВЛЕНИЕ ПЕРЕСЕЧЕНИЙ ====================
+  // function refreshAllIntersections() {
+  //   clearIntersectionPoints();
+  //   const intersections = findAllIntersections();
+  //   intersectionPoints = intersections;
+
+  //   intersections.forEach((inter, index) => {
+  //     createIntersectionPoint(inter.x, inter.y, index, inter);
+  //   });
+
+  //   bringIntersectionPointsToFront();
+  //   canvas.renderAll();
+
+  //   if (intersections.length > 0) {
+  //     showNotification(`Обновлено ${intersections.length} точек пересечения`, 'success');
+  //   } else {
+  //     showNotification('Пересечений не найдено', 'info');
+  //   }
+  // }
 });
