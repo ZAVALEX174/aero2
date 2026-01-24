@@ -478,7 +478,9 @@ function addImageAtPosition(x, y) {
       imageId: currentImageData.id,
       imagePath: currentImageData.path,
       width: originalWidth * scale,
-      height: originalHeight * scale
+      height: originalHeight * scale,
+      airVolume: null,
+      airResistance: null,
     };
 
     img.set({
@@ -1061,6 +1063,8 @@ function showObjectPropertiesModal() {
     document.getElementById('objPropertyWidth').value = Math.round(activeObject.width * activeObject.scaleX);
     document.getElementById('objPropertyHeight').value = Math.round(activeObject.height * activeObject.scaleY);
     document.getElementById('objPropertyRotation').value = Math.round(activeObject.angle || 0);
+    document.getElementById('objAirVolume').value = props.airVolume || 0;
+    document.getElementById('objAirResistance').value = props.airResistance || 0;
     document.getElementById('objPropertyOpacity').value = Math.round((activeObject.opacity || 1) * 100);
     document.getElementById('opacityValue').textContent = Math.round((activeObject.opacity || 1) * 100) + '%';
     document.getElementById('objPropertyNotes').value = props.notes || '';
@@ -1109,7 +1113,10 @@ function applyObjectProperties() {
     const newProperties = {
       name: document.getElementById('objPropertyName').value.trim(),
       type: document.getElementById('objPropertyType').value,
-      notes: document.getElementById('objPropertyNotes').value.trim() || null
+      notes: document.getElementById('objPropertyNotes').value.trim() || null,
+      // ДОБАВЛЕНО НОВЫЕ СВОЙСТВА
+      airVolume: parseFloat(document.getElementById('objAirVolume').value) || 0,
+      airResistance: parseFloat(document.getElementById('objAirResistance').value) || 0
     };
 
     const customDataText = document.getElementById('objPropertyCustomData').value.trim();
@@ -1123,8 +1130,11 @@ function applyObjectProperties() {
     }
 
     const oldProps = currentEditingObject.properties || {};
+    // Сохраняем старые свойства если они есть
     if (oldProps.imageId) newProperties.imageId = oldProps.imageId;
     if (oldProps.imagePath) newProperties.imagePath = oldProps.imagePath;
+    if (oldProps.width !== undefined) newProperties.width = oldProps.width;
+    if (oldProps.height !== undefined) newProperties.height = oldProps.height;
     if (oldProps.L !== undefined) newProperties.L = oldProps.L;
     if (oldProps.I !== undefined) newProperties.I = oldProps.I;
     if (oldProps.K !== undefined) newProperties.K = oldProps.K;
@@ -1288,6 +1298,25 @@ function updatePropertiesPanel() {
         <div class="property-value">${Math.round(activeObj.width * activeObj.scaleX)} × ${Math.round(activeObj.height * activeObj.scaleY)} px</div>
       </div>
     `;
+
+    // ДОБАВЛЕНО: Отображение новых свойств
+    if (props.airVolume !== undefined && props.airVolume !== null) {
+      content += `
+      <div class="property-row">
+        <div class="property-label">Объем воздуха:</div>
+        <div class="property-value">${props.airVolume} м³/с</div>
+      </div>
+    `;
+    }
+
+    if (props.airResistance !== undefined && props.airResistance !== null) {
+      content += `
+      <div class="property-row">
+        <div class="property-label">Сопротивление воздуха:</div>
+        <div class="property-value">${props.airResistance} Па</div>
+      </div>
+    `;
+    }
 
     if (props.notes) {
       content += `
