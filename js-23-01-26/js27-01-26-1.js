@@ -470,9 +470,9 @@ function updateStatus() {
 }
 
 // НОВАЯ ФУНКЦИЯ: Расчет периметра для линии
-function calculateLinePerimeter(passageLength) {
+function calculateLinePerimeter(crossSectionalArea) {
   // Периметр = 3.8 * квадратный корень из длины прохода
-  return roundTo5(3.8 * Math.sqrt(passageLength));
+  return roundTo5(3.8 * Math.sqrt(crossSectionalArea));
 }
 
 // НОВАЯ ФУНКЦИЯ: Нормализация свойств линии (для совместимости со старых файлов)
@@ -499,7 +499,7 @@ function normalizeLineProperties(line) {
 
   // Рассчитываем периметр если есть длина прохода
   if (props.passageLength !== undefined) {
-    props.perimeter = calculateLinePerimeter(props.passageLength);
+    props.perimeter = calculateLinePerimeter(props.crossSectionalArea);
   }
 
   // Обновляем свойства линии
@@ -731,6 +731,7 @@ function setupCanvasEvents() {
             roughnessCoefficient: roundTo5(parseFloat(document.getElementById('propertyRoughnessCoefficient')?.value) || 0.015),
             crossSectionalArea: roundTo5(parseFloat(document.getElementById('propertyCrossSectionalArea')?.value) || 10),
             W: roundTo5(parseFloat(document.getElementById('propertyW')?.value) || 1.0),
+            airResistance: 1,
             length: length,
             startPoint: lineStartPoint,
             endPoint: {x: snappedX, y: snappedY}
@@ -857,7 +858,7 @@ function setupCanvasEvents() {
     if (e.target && e.target.type === 'line' && e.target.properties) {
       // Если изменилась длина прохода, пересчитываем периметр
       if (e.target.properties.passageLength !== undefined) {
-        e.target.properties.perimeter = calculateLinePerimeter(e.target.properties.passageLength);
+        e.target.properties.perimeter = calculateLinePerimeter(e.target.properties.crossSectionalArea);
       }
     }
   });
@@ -1565,7 +1566,7 @@ function applyLineProperties() {
   if (oldProps.startsFromObject) newProperties.startsFromObject = oldProps.startsFromObject;
 
   // Рассчитываем периметр
-  newProperties.perimeter = calculateLinePerimeter(newProperties.passageLength);
+  newProperties.perimeter = calculateLinePerimeter(newProperties.crossSectionalArea);
 
   saveToUndoStack();
   currentEditingLine.set({
@@ -2003,14 +2004,14 @@ function splitLineAtPoint(line, point) {
     line1.properties.length = distance1;
     line1.properties.passageLength = roundTo5((props.passageLength || 0.5) * proportion1);
     // Пересчитываем периметр для новой длины
-    line1.properties.perimeter = calculateLinePerimeter(line1.properties.passageLength);
+    line1.properties.perimeter = calculateLinePerimeter(line1.properties.crossSectionalArea);
   }
 
   if (line2.properties) {
     line2.properties.length = distance2;
     line2.properties.passageLength = roundTo5((props.passageLength || 0.5) * proportion2);
     // Пересчитываем периметр для новой длины
-    line2.properties.perimeter = calculateLinePerimeter(line2.properties.passageLength);
+    line2.properties.perimeter = calculateLinePerimeter(line2.properties.crossSectionalArea);
   }
 
   return {line1, line2};
@@ -3054,7 +3055,7 @@ function calculatePerimeterForAllLines() {
       normalizeLineProperties(line);
 
       const passageLength = roundTo5(line.properties.passageLength || 0.5);
-      line.properties.perimeter = calculateLinePerimeter(passageLength);
+      line.properties.perimeter = calculateLinePerimeter(crossSectionalArea);
       updatedCount++;
     }
   });
@@ -3113,6 +3114,6 @@ function exportLinePropertiesToCSV() {
 // Функция для обновления периметра при изменении длины прохода
 function updatePerimeterOnPassageLengthChange(line) {
   if (line.properties && line.properties.passageLength !== undefined) {
-    line.properties.perimeter = calculateLinePerimeter(line.properties.passageLength);
+    line.properties.perimeter = calculateLinePerimeter(line.properties.crossSectionalArea);
   }
 }
