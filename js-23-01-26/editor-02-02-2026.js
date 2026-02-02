@@ -38,6 +38,11 @@ document.addEventListener('DOMContentLoaded', function () {
   setupKeyboardShortcuts();
   setupAltKeyTracking();
 
+  // Добавляем кнопку отчета в интерфейс
+  setTimeout(() => {
+    addAirVolumeReportButton();
+  }, 100);
+
   console.log('Редактор технических чертежей загружен!');
 });
 
@@ -122,6 +127,133 @@ function normalizeLineProperties(line) {
 
   calculateAllLineProperties(line);
   line.set('properties', props);
+}
+
+// ==================== ФУНКЦИЯ РАСЧЕТА ОБЪЕМА ВОЗДУХА ДЛЯ ЛИНИЙ ====================
+function calculateAirVolumesForAllLines() {
+  const lines = canvas.getObjects().filter(obj =>
+    obj.type === 'line' && obj.id !== 'grid-line'
+  );
+
+  const images = canvas.getObjects().filter(obj =>
+    obj.type === 'image' && obj.properties
+  );
+
+  // Шаг 1: Сбор информации о всех точках пересечения
+  const intersectionPointsMap = new Map();
+
+  // Собираем все точки пересечения линий с объектами и другими линиями
+  lines.forEach(line => {
+    const startKey = `${roundTo5(line.x1)}_${roundTo5(line.y1)}`;
+    const endKey = `${roundTo5(line.x2)}_${roundTo5(line.y2)}`;
+
+    if (!intersectionPointsMap.has(startKey)) {
+      intersectionPointsMap.set(startKey, {
+        x: roundTo5(line.x1),
+        y: roundTo5(line.y1),
+        linesStarting: [],
+        linesEnding: [],
+        objects: []
+      });
+    }
+
+    if (!intersectionPointsMap.has(endKey)) {
+      intersectionPointsMap.set(endKey, {
+        x: roundTo5(line.x2),
+        y: roundTo5(line.y2),
+        linesStarting: [],
+        linesEnding: [],
+        objects: []
+      });
+    }
+
+    // Добавляем линию как начинающуюся в стартовой точке
+    intersectionPointsMap.get(startKey).linesStarting.push(line);
+
+    // Добавляем линию как заканчивающуюся в конечной точке
+    intersectionPointsMap.get(endKey).linesEnding.push(line);
+  });
+
+  // Добавляем объекты в точки пересечения
+  images.forEach(image => {
+    const center = getObjectCenter(image);
+    const centerKey = `${roundTo5(center.x)}_${roundTo5(center.y)}`;
+
+    // Проверяем, совпадает ли центр объекта с какой-либо точкой пересечения
+    for (const [key, pointData] of intersectionPointsMap.entries()) {
+      const distance = roundTo5(Math.sqrt(
+        Math.pow(pointData.x - center.x, 2) +
+        Math.pow(pointData.y - center.y, 2)
+      ));
+
+      // Если объект находится в точке пересечения (в пределах допуска)
+      if (distance < 5) { // Допуск 5px
+        pointData.objects.push(image);
+      }
+    }
+  });
+
+  // Шаг 2: Расчет объема воздуха по принципам
+  const linesToUpdate = new Set();
+
+  // Принцип 1: Если линия начинается от объекта с объемом воздуха
+  lines.forEach(line => {
+    if (line.lineStartsFromObject && line.startObject) {
+      const obj = line.startObject;
+      if (obj.properties && obj.properties.airVolume !== undefined && obj.properties.airVolume !== null) {
+        if (!line.properties.airVolume || line.properties.airVolume !== obj.properties.airVolume) {
+          line.properties.airVolume = roundTo5(obj.properties.airVolume);
+          linesToUpdate.add(line);
+        }
+      }
+    }
+  });
+
+  // Принцип 2: Передача объема воздуха между линиями в точках пересечения
+  for (const [key, pointData] of intersectionPointsMap.entries()) {
+    // Если в точке есть линии, заканчивающиеся и начинающиеся
+    if (pointData.linesEnding.length === 1 && pointData.linesStarting.length === 1) {
+      const endingLine = pointData.linesEnding[0];
+      const startingLine = pointData.linesStarting[0];
+
+      // Проверяем, есть ли у заканчивающейся линии объем воздуха
+      if (endingLine.properties && endingLine.properties.airVolume !== undefined && endingLine.properties.airVolume !== null) {
+        // Передаем объем воздуха начинающейся линии
+        if (!startingLine.properties.airVolume || startingLine.properties.airVolume !== endingLine.properties.airVolume) {
+          startingLine.properties.airVolume = roundTo5(endingLine.properties.airVolume);
+          linesToUpdate.add(startingLine);
+        }
+      }
+    }
+
+    // Принцип 1 (альтернативный подход): Если в точке есть объект с объемом воздуха
+    // и есть линии, начинающиеся в этой точке
+    if (pointData.objects.length > 0 && pointData.linesStarting.length > 0) {
+      pointData.objects.forEach(obj => {
+        if (obj.properties && obj.properties.airVolume !== undefined && obj.properties.airVolume !== null) {
+          pointData.linesStarting.forEach(line => {
+            if (!line.properties.airVolume || line.properties.airVolume !== obj.properties.airVolume) {
+              line.properties.airVolume = roundTo5(obj.properties.airVolume);
+              linesToUpdate.add(line);
+            }
+          });
+        }
+      });
+    }
+  }
+
+  // Шаг 3: Обновляем линии, если нужно
+  if (linesToUpdate.size > 0) {
+    linesToUpdate.forEach(line => {
+      line.set('properties', line.properties);
+      canvas.renderAll();
+    });
+
+    updatePropertiesPanel();
+    return true;
+  }
+
+  return false;
 }
 
 // ==================== УПРАВЛЕНИЕ ОБЪЕКТАМИ ====================
@@ -492,6 +624,11 @@ function handleLineDrawing(options, pointer) {
     canvas.add(finalLine);
     canvas.setActiveObject(finalLine);
     updatePropertiesPanel();
+
+    // Вызываем расчет объемов воздуха после создания линии
+    setTimeout(() => {
+      calculateAirVolumesForAllLines();
+    }, 10);
 
     lastLineEndPoint = {x: snappedX, y: snappedY};
 
@@ -965,6 +1102,11 @@ function splitAllLines() {
   canvas.renderAll();
   bringIntersectionPointsToFront();
 
+  // Вызываем расчет объемов воздуха после разделения линий
+  setTimeout(() => {
+    calculateAirVolumesForAllLines();
+  }, 100);
+
   if (intersections.length > 0) {
     showNotification(`Найдено ${intersections.length} точек пересечения`, 'success');
   } else {
@@ -1284,7 +1426,6 @@ function splitLinesAtImagePosition(image) {
 }
 
 // ==================== ТОЧКИ ПЕРЕСЕЧЕНИЯ ====================
-// ==================== ТОЧКИ ПЕРЕСЕЧЕНИЯ ====================
 function createIntersectionPoint(x, y, index, intersectionData, customColor = '#ff4757') {
   const circle = new fabric.Circle({
     left: roundTo5(x - 6),
@@ -1388,7 +1529,6 @@ function clearIntersectionPoints() {
 }
 
 // ==================== МОДАЛЬНОЕ ОКНО ИНФОРМАЦИИ О ТОЧКЕ ====================
-// ==================== МОДАЛЬНОЕ ОКНО ИНФОРМАЦИИ О ТОЧКЕ ====================
 function showIntersectionPointInfo(pointIndex) {
   const pointData = intersectionPoints[pointIndex];
   if (!pointData) {
@@ -1436,6 +1576,39 @@ function showIntersectionPointInfo(pointIndex) {
     }
   });
 
+  // Проверяем передачу объема воздуха
+  let airVolumeTransferInfo = '';
+  if (linesEndingHere.length === 1 && linesStartingHere.length === 1) {
+    const endingLine = linesEndingHere[0].line;
+    const startingLine = linesStartingHere[0].line;
+
+    if (endingLine.properties && endingLine.properties.airVolume !== undefined &&
+      startingLine.properties && startingLine.properties.airVolume !== undefined) {
+
+      airVolumeTransferInfo = `
+        <div class="property-group" style="margin-top: 15px; border-left: 3px solid #00b894; padding-left: 10px; background: #e8f6f3; padding: 10px; border-radius: 4px;">
+          <h5 style="margin: 5px 0; color: #00b894;">📤 Передача объема воздуха:</h5>
+          <div class="property-row">
+            <div class="property-label">От линии (конец):</div>
+            <div class="property-value"><strong>${formatTo5(endingLine.properties.airVolume)} м³/с</strong></div>
+          </div>
+          <div class="property-row">
+            <div class="property-label">К линии (начало):</div>
+            <div class="property-value"><strong>${formatTo5(startingLine.properties.airVolume)} м³/с</strong></div>
+          </div>
+          <div class="property-row">
+            <div class="property-label">Статус:</div>
+            <div class="property-value">
+              ${Math.abs(endingLine.properties.airVolume - startingLine.properties.airVolume) < 0.0001
+        ? '<span style="color: #00b894;">✓ Значения совпадают</span>'
+        : '<span style="color: #e17055;">⚠ Значения различаются</span>'}
+            </div>
+          </div>
+        </div>
+      `;
+    }
+  }
+
   let html = `
     <div class="property-group">
       <h4>📌 Точка разделения #${pointIndex + 1}</h4>
@@ -1468,6 +1641,11 @@ function showIntersectionPointInfo(pointIndex) {
         </div>
       </div>
   `;
+
+  // Добавляем информацию о передаче объема воздуха
+  if (airVolumeTransferInfo) {
+    html += airVolumeTransferInfo;
+  }
 
   // Отображаем дополнительные данные в зависимости от типа точки
   if (pointData.type === 'object-center' && pointData.object) {
@@ -1656,6 +1834,18 @@ function showIntersectionPointInfo(pointIndex) {
         </button>
       </div>
     </div>
+    
+    <div class="property-group" style="margin-top: 20px;">
+      <h4>🔄 Управление объемом воздуха:</h4>
+      <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+        <button onclick="recalculateAirVolumeAtPoint(${pointIndex})" class="btn-small" style="background: #00b894;">
+          🔄 Пересчитать в точке
+        </button>
+        <button onclick="calculateAirVolumesForAllLines()" class="btn-small" style="background: #0984e3;">
+          🌐 Пересчитать все
+        </button>
+      </div>
+    </div>
   `;
 
   document.getElementById('intersectionPointInfo').innerHTML = html;
@@ -1740,66 +1930,76 @@ window.deleteIntersectionPoint = function (pointIndex) {
   showNotification('Точка пересечения удалена', 'info');
 };
 
-window.selectObjectsAtPoint = function (pointIndex) {
+// Функция для принудительного перерасчета объема воздуха в конкретной точке
+window.recalculateAirVolumeAtPoint = function (pointIndex) {
   const pointData = intersectionPoints[pointIndex];
   if (!pointData) return;
 
-  const allObjects = canvas.getObjects();
-  const objectsToSelect = [];
+  const allLines = canvas.getObjects().filter(obj =>
+    obj.type === 'line' && obj.id !== 'grid-line'
+  );
 
-  allObjects.forEach(obj => {
-    if (obj.type === 'line') {
-      const startDist = roundTo5(Math.sqrt(Math.pow(obj.x1 - pointData.x, 2) + Math.pow(obj.y1 - pointData.y, 2)));
-      const endDist = roundTo5(Math.sqrt(Math.pow(obj.x2 - pointData.x, 2) + Math.pow(obj.y2 - pointData.y, 2)));
-      if (startDist < 0.00001 || endDist < 0.00001) {
-        objectsToSelect.push(obj);
-      }
-    } else if (obj.type === 'image' || obj.type === 'rect' || obj.type === 'circle') {
-      const objRect = getObjectRect(obj);
-      if (pointData.x >= objRect.left && pointData.x <= objRect.right &&
-        pointData.y >= objRect.top && pointData.y <= objRect.bottom) {
-        objectsToSelect.push(obj);
-      }
-    }
+  // Находим линии, связанные с этой точкой
+  const linesAtPoint = allLines.filter(line => {
+    const startDist = roundTo5(Math.sqrt(Math.pow(line.x1 - pointData.x, 2) + Math.pow(line.y1 - pointData.y, 2)));
+    const endDist = roundTo5(Math.sqrt(Math.pow(line.x2 - pointData.x, 2) + Math.pow(line.y2 - pointData.y, 2)));
+    return startDist < 0.00001 || endDist < 0.00001;
   });
 
-  if (objectsToSelect.length > 0) {
-    const selection = new fabric.ActiveSelection(objectsToSelect, {
-      canvas: canvas
+  // Применяем принципы расчета
+  let updated = false;
+
+  // Принцип 1: Передача от объекта к линии
+  if (pointData.object && pointData.object.properties &&
+    pointData.object.properties.airVolume !== undefined) {
+
+    linesAtPoint.forEach(line => {
+      // Проверяем, начинается ли линия в этой точке
+      const startDist = roundTo5(Math.sqrt(Math.pow(line.x1 - pointData.x, 2) + Math.pow(line.y1 - pointData.y, 2)));
+      if (startDist < 0.00001) {
+        if (!line.properties.airVolume || line.properties.airVolume !== pointData.object.properties.airVolume) {
+          line.properties.airVolume = roundTo5(pointData.object.properties.airVolume);
+          line.set('properties', line.properties);
+          updated = true;
+        }
+      }
     });
-    canvas.setActiveObject(selection);
-    canvas.renderAll();
-    showNotification(`Выбрано ${objectsToSelect.length} объектов`, 'success');
-  } else {
-    showNotification('Объектов не найдено', 'info');
   }
 
-  closeIntersectionPointModal();
-};
-
-window.deleteIntersectionPoint = function (pointIndex) {
-  if (!confirm('Удалить эту точку пересечения?')) return;
-
-  const visual = intersectionVisuals[pointIndex];
-  if (visual) {
-    canvas.remove(visual.circle);
-    canvas.remove(visual.text);
-  }
-
-  intersectionPoints.splice(pointIndex, 1);
-  intersectionVisuals.splice(pointIndex, 1);
-
-  // Обновляем индексы оставшихся точек
-  intersectionVisuals.forEach((visual, idx) => {
-    if (visual.circle) {
-      visual.circle.set('pointIndex', idx);
-      visual.text.set('text', (idx + 1).toString());
-    }
+  // Принцип 2: Передача между линиями
+  const linesEndingHere = linesAtPoint.filter(line => {
+    const endDist = roundTo5(Math.sqrt(Math.pow(line.x2 - pointData.x, 2) + Math.pow(line.y2 - pointData.y, 2)));
+    return endDist < 0.00001;
   });
 
-  canvas.renderAll();
-  closeIntersectionPointModal();
-  showNotification('Точка пересечения удалена', 'info');
+  const linesStartingHere = linesAtPoint.filter(line => {
+    const startDist = roundTo5(Math.sqrt(Math.pow(line.x1 - pointData.x, 2) + Math.pow(line.y1 - pointData.y, 2)));
+    return startDist < 0.00001;
+  });
+
+  if (linesEndingHere.length === 1 && linesStartingHere.length === 1) {
+    const endingLine = linesEndingHere[0];
+    const startingLine = linesStartingHere[0];
+
+    if (endingLine.properties && endingLine.properties.airVolume !== undefined) {
+      if (!startingLine.properties.airVolume ||
+        startingLine.properties.airVolume !== endingLine.properties.airVolume) {
+        startingLine.properties.airVolume = roundTo5(endingLine.properties.airVolume);
+        startingLine.set('properties', startingLine.properties);
+        updated = true;
+      }
+    }
+  }
+
+  if (updated) {
+    canvas.renderAll();
+    updatePropertiesPanel();
+    showNotification('Объем воздуха пересчитан в точке', 'success');
+    // Обновляем модальное окно
+    showIntersectionPointInfo(pointIndex);
+  } else {
+    showNotification('Изменений не требуется', 'info');
+  }
 };
 
 // ==================== ПАНЕЛЬ СВОЙСТВ ====================
@@ -1856,6 +2056,12 @@ function updatePropertiesPanel() {
                         <div class="property-label">Объем воздуха:</div>
                         <div class="property-value"><strong>${formatTo5(props.airVolume || 0)} м³/с</strong></div>
                     </div>
+                    ${activeObj.lineStartsFromObject && activeObj.startObject ? `
+                    <div class="property-row">
+                        <div class="property-label">Источник воздуха:</div>
+                        <div class="property-value">${activeObj.startObject.properties?.name || 'Объект'}</div>
+                    </div>
+                    ` : ''}
                 </div>
             `;
     }
@@ -2059,6 +2265,11 @@ function applyLineProperties() {
     properties: newProperties
   });
 
+  // Вызываем перерасчет объемов воздуха после изменения свойств линии
+  setTimeout(() => {
+    calculateAirVolumesForAllLines();
+  }, 10);
+
   canvas.renderAll();
   updatePropertiesPanel();
   closeLinePropertiesModal();
@@ -2140,6 +2351,11 @@ function applyObjectProperties() {
     currentEditingObject.set(updates);
     canvas.renderAll();
 
+    // Вызываем перерасчет объемов воздуха после изменения свойств объекта
+    setTimeout(() => {
+      calculateAirVolumesForAllLines();
+    }, 10);
+
     updatePropertiesPanel();
     closeObjectPropertiesModal();
     showNotification('Свойства объекта обновлены', 'success');
@@ -2203,6 +2419,154 @@ function closeIntersectionPointModal() {
   document.getElementById('intersectionPointModal').style.display = 'none';
 }
 
+// ==================== ФУНКЦИЯ ДЛЯ ОТЧЕТА ОБ ОБЪЕМАХ ВОЗДУХА ====================
+window.showAirVolumeReport = function () {
+  const lines = canvas.getObjects().filter(obj =>
+    obj.type === 'line' && obj.id !== 'grid-line'
+  );
+
+  const images = canvas.getObjects().filter(obj =>
+    obj.type === 'image' && obj.properties
+  );
+
+  let html = `
+    <div class="property-group">
+      <h4>📊 Отчет о передаче объемов воздуха</h4>
+      <div class="property-row">
+        <div class="property-label">Всего линий:</div>
+        <div class="property-value">${lines.length}</div>
+      </div>
+      <div class="property-row">
+        <div class="property-label">Линии с объемом воздуха:</div>
+        <div class="property-value">${lines.filter(l => l.properties && l.properties.airVolume !== undefined).length}</div>
+      </div>
+      <div class="property-row">
+        <div class="property-label">Объекты с объемом воздуха:</div>
+        <div class="property-value">${images.filter(i => i.properties && i.properties.airVolume !== undefined).length}</div>
+      </div>
+    </div>
+  `;
+
+  // Информация об объектах-источниках
+  const sourceObjects = images.filter(i => i.properties && i.properties.airVolume !== undefined);
+  if (sourceObjects.length > 0) {
+    html += `
+      <div class="property-group">
+        <h4>🎯 Объекты-источники:</h4>
+    `;
+
+    sourceObjects.forEach((obj, index) => {
+      const connectedLines = lines.filter(line =>
+        line.lineStartsFromObject && line.startObject &&
+        (line.startObject.id === obj.id || line.startObject._id === obj._id)
+      );
+
+      html += `
+        <div class="property-group" style="margin-top: 10px; background: #e8f6f3; padding: 10px; border-radius: 4px;">
+          <div class="property-row">
+            <div class="property-label">${obj.properties.name || `Объект ${index + 1}`}:</div>
+            <div class="property-value"><strong>${formatTo5(obj.properties.airVolume)} м³/с</strong></div>
+          </div>
+          <div class="property-row">
+            <div class="property-label">Подключенных линий:</div>
+            <div class="property-value">${connectedLines.length}</div>
+          </div>
+        </div>
+      `;
+    });
+
+    html += `</div>`;
+  }
+
+  // Информация о линиях
+  html += `
+    <div class="property-group">
+      <h4>📏 Линии и их объемы воздуха:</h4>
+  `;
+
+  lines.forEach((line, index) => {
+    const airVolume = line.properties && line.properties.airVolume !== undefined
+      ? formatTo5(line.properties.airVolume)
+      : 'не задан';
+
+    let sourceInfo = '';
+    if (line.lineStartsFromObject && line.startObject) {
+      sourceInfo = `← ${line.startObject.properties?.name || 'Объект'}`;
+    }
+
+    html += `
+      <div class="property-group" style="margin-top: 5px; padding: 8px; background: #f8f9fa; border-radius: 4px; border-left: 3px solid ${line.stroke || '#4A00E0'};">
+        <div class="property-row">
+          <div class="property-label">${line.properties?.name || `Линия ${index + 1}`}:</div>
+          <div class="property-value">
+            <strong>${airVolume} м³/с</strong>
+            ${sourceInfo ? `<span style="margin-left: 10px; font-size: 12px; color: #7f8c8d;">${sourceInfo}</span>` : ''}
+          </div>
+        </div>
+      </div>
+    `;
+  });
+
+  html += `</div>`;
+
+  // Кнопки действий
+  html += `
+    <div class="property-group" style="margin-top: 20px;">
+      <h4>🚀 Действия:</h4>
+      <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+        <button onclick="calculateAirVolumesForAllLines()" class="btn-small" style="background: #0984e3;">
+          🔄 Пересчитать все
+        </button>
+        <button onclick="closeAirVolumeReport()" class="btn-small">
+          ✕ Закрыть
+        </button>
+      </div>
+    </div>
+  `;
+
+  // Создаем новое модальное окно или используем существующее
+  if (!document.getElementById('airVolumeReportModal')) {
+    const modalHTML = `
+      <div id="airVolumeReportModal" class="modal" style="display: flex;">
+        <div class="modal-content" style="max-width: 800px; max-height: 80vh; overflow-y: auto;">
+          <div class="modal-header">
+            <h3>📊 Отчет о передаче объемов воздуха</h3>
+            <span class="modal-close" onclick="closeAirVolumeReport()">&times;</span>
+          </div>
+          <div class="modal-body" id="airVolumeReportContent">
+            ${html}
+          </div>
+        </div>
+      </div>
+    `;
+    document.body.insertAdjacentHTML('beforeend', modalHTML);
+  } else {
+    document.getElementById('airVolumeReportContent').innerHTML = html;
+    document.getElementById('airVolumeReportModal').style.display = 'flex';
+  }
+};
+
+// Функция закрытия отчета
+window.closeAirVolumeReport = function () {
+  const modal = document.getElementById('airVolumeReportModal');
+  if (modal) {
+    modal.style.display = 'none';
+  }
+};
+
+// Добавляем кнопку в интерфейс для вызова отчета
+function addAirVolumeReportButton() {
+  const controls = document.querySelector('.controls');
+  if (controls) {
+    const reportButton = document.createElement('button');
+    reportButton.id = 'airVolumeReportBtn';
+    reportButton.className = 'control-btn';
+    reportButton.innerHTML = '<span>📊</span> Отчет воздуха';
+    reportButton.onclick = window.showAirVolumeReport;
+    controls.appendChild(reportButton);
+  }
+}
+
 // ==================== УПРАВЛЕНИЕ ПРОЕКТОМ ====================
 function saveDrawing() {
   const json = JSON.stringify(canvas.toJSON(['id', 'properties', 'pointIndex', 'pointData', 'lineStartsFromObject', 'startObject']));
@@ -2261,6 +2625,11 @@ function loadDrawing() {
             }
           });
 
+          // Вызываем расчет объемов воздуха после загрузки чертежа
+          setTimeout(() => {
+            calculateAirVolumesForAllLines();
+          }, 100);
+
           canvas.renderAll();
           updatePropertiesPanel();
           updateStatus();
@@ -2317,6 +2686,10 @@ function undoAction() {
 
   const previousState = undoStack[undoStack.length - 1];
   canvas.loadFromJSON(previousState, function () {
+    // После отмены вызываем расчет объемов воздуха
+    setTimeout(() => {
+      calculateAirVolumesForAllLines();
+    }, 10);
     canvas.renderAll();
     updatePropertiesPanel();
     updateStatus();
@@ -2333,6 +2706,10 @@ function redoAction() {
   undoStack.push(nextState);
 
   canvas.loadFromJSON(nextState, function () {
+    // После повтора вызываем расчет объемов воздуха
+    setTimeout(() => {
+      calculateAirVolumesForAllLines();
+    }, 10);
     canvas.renderAll();
     updatePropertiesPanel();
     updateStatus();
@@ -2412,6 +2789,14 @@ function setupKeyboardShortcuts() {
       case 'a':
         event.preventDefault();
         toggleAutoSplitMode();
+        break;
+      case 'r':
+        event.preventDefault();
+        if (event.altKey) {
+          window.showAirVolumeReport();
+        } else {
+          calculateAirVolumesForAllLines();
+        }
         break;
     }
   });

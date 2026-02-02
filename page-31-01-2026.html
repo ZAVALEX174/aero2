@@ -1,16 +1,14 @@
 <!DOCTYPE html>
 <html lang="ru">
-
 <head>
   <meta charset="UTF-8">
-  <title>Редактор технических чертежей с разделением линий</title>
+  <title>Редактор технических чертежей</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.0/fabric.min.js"></script>
   <link
     rel="stylesheet"
     href="./styles/style2.css"
   >
 </head>
-
 <body>
 <div class="container">
   <h1>📐 Редактор технических чертежей</h1>
@@ -20,123 +18,164 @@
 
   <div class="main-content">
     <div class="left-panel">
-      <div id="tools">
-        <button
-          onclick="activateLineDrawing()"
-          id="lineDrawingBtn"
-        >
-          <span>📏</span> Линия
-        </button>
+      <!-- Панель инструментов -->
+      <div class="toolbar">
+        <h3>Инструменты</h3>
+        <div id="tools">
+          <button
+            onclick="activateLineDrawing()"
+            id="lineDrawingBtn"
+          >
+            <span>📏</span> Линия
+          </button>
+          <button
+            onclick="splitAllLinesAtObjectCenters()"
+            id="splitAtCentersBtn"
+          >
+            <span>🎯</span> Разделить по центрам
+          </button>
+          <button onclick="splitAllLines()">
+            <span>✂️</span> Разделить
+          </button>
+          <button
+            onclick="toggleContinuousMode()"
+            id="continuousModeBtn"
+          >
+            <span>🔗</span> Непрерывный (ВЫКЛ)
+          </button>
+          <button
+            onclick="toggleLineSplitMode()"
+            id="lineSplitModeBtn"
+            class="line-split-mode-btn"
+          >
+            <span>🎯</span> Режим: АВТО
+          </button>
+          <button
+            onclick="toggleAutoSplitMode()"
+            id="autoSplitBtn"
+          >
+            <span>⚡</span> Авторазбивка (ВКЛ)
+          </button>
+          <button
+            onclick="toggleGrid()"
+            id="gridToggleBtn"
+          >
+            <span>🔲</span> Сетка (ВКЛ)
+          </button>
+        </div>
 
-        <button
-          id="splitAtCentersBtn"
-          onclick="splitAllLinesAtObjectCenters()"
-        >
-          <span>🎯</span> Разделить по центрам объектов
-        </button>
-
-        <button onclick="splitAllLines()">
-          <span>✂️</span> Разделить
-        </button>
-        <!-- <button onclick="bringIntersectionPointsToFront()" class="tool-btn">
-        <span>🔄</span> Обновить пересечения
-      </button> -->
-        <button
-          onclick="toggleContinuousMode()"
-          id="continuousModeBtn"
-        >
-          <span>🔗</span> Непрерывный (ВЫКЛ)
-        </button>
-        <button onclick="showLinePropertiesModal()">
-          <span>⚙️</span> Свойства линии
-        </button>
-        <button onclick="showObjectPropertiesModal()">
-          <span>⚙️</span> Свойства объекта
-        </button>
-        <button onclick="showAddImageModal()">
-          <span>➕</span> Добавить изображение
-        </button>
-        <button onclick="saveDrawing()">
-          <span>💾</span> Сохранить
-        </button>
-        <button onclick="loadDrawing()">
-          <span>📂</span> Загрузить
-        </button>
-        <button onclick="clearCanvas()">
-          <span>🗑️</span> Очистить холст
-        </button>
-        <button
-          onclick="toggleGrid()"
-          id="gridToggleBtn"
-        >
-          <span>🔲</span> Сетка (ВКЛ)
-        </button>
-        <button
-          onclick="undoAction()"
-          id="undoBtn"
-        >
-          <span>↩️</span> Отменить
-        </button>
-        <button
-          onclick="toggleAutoSplitMode()"
-          id="autoSplitBtn"
-        >
-          <span>⚡</span> Авторазбивка (ВКЛ)
-        </button>
-        <button
-          onclick="toggleLineSplitMode()"
-          id="lineSplitModeBtn"
-          class="line-split-mode-btn"
-        >
-          <span>🎯</span> Режим: АВТО
-        </button>
+        <h3>Управление</h3>
+        <div class="control-buttons">
+          <button onclick="showLinePropertiesModal()">
+            <span>⚙️</span> Свойства линии
+          </button>
+          <button onclick="showObjectPropertiesModal()">
+            <span>⚙️</span> Свойства объекта
+          </button>
+          <button onclick="showAddImageModal()">
+            <span>➕</span> Добавить изображение
+          </button>
+          <button
+            onclick="undoAction()"
+            id="undoBtn"
+          >
+            <span>↩️</span> Отменить
+          </button>
+          <button
+            onclick="redoAction()"
+            id="redoBtn"
+            disabled
+          >
+            <span>↪️</span> Повторить
+          </button>
+          <button onclick="saveDrawing()">
+            <span>💾</span> Сохранить
+          </button>
+          <button onclick="loadDrawing()">
+            <span>📂</span> Загрузить
+          </button>
+          <button
+            onclick="clearCanvas()"
+            class="danger"
+          >
+            <span>🗑️</span> Очистить холст
+          </button>
+          <button onclick="exportLinePropertiesToCSV()">
+            <span>📊</span> Экспорт CSV
+          </button>
+          <button onclick="calculateAllPropertiesForAllLines()">
+            <span>🧮</span> Пересчитать все
+          </button>
+        </div>
       </div>
 
-      <div id="image-tools-container">
-        <div class="image-tools-header">
-          <h4>📁 Изображения(Объекты)</h4>
-        </div>
+      <!-- Панель изображений -->
+      <div class="image-library">
+        <h3>📁 Изображения (Объекты)</h3>
         <div
-          class="image-tools-grid"
-          id="imageToolsGrid"
-        >
-          <!-- Динамически заполняется -->
-        </div>
+          class="image-library-grid"
+          id="imageLibraryGrid"
+        ></div>
       </div>
 
+      <!-- Панель свойств -->
       <div class="properties-panel">
         <h3>Свойства объекта</h3>
-        <div id="props-content">
+        <div id="properties-content">
           <p style="color: #7f8c8d; font-style: italic; text-align: center; padding: 20px;">
             Выберите объект на чертеже
           </p>
         </div>
       </div>
 
-      <div id="status">Готово к работе. Объектов: 0</div>
+      <!-- Статусная панель -->
+      <div class="status-panel">
+        <div id="status">Готово к работе. Объектов: 0</div>
+        <div
+          id="hint"
+          class="hint"
+        >Используйте Alt для привязки к краям объектов
+        </div>
+      </div>
 
-      <div class="instructions">
+      <!-- Горячие клавиши -->
+      <div class="hotkeys-panel">
         <h4>📋 Горячие клавиши</h4>
-        <ul>
-          <li><strong>ESC</strong> - отмена действия</li>
-          <li><strong>Delete</strong> - удалить объект</li>
-          <li><strong>Ctrl+S</strong> - сохранить</li>
-          <li><strong>Ctrl+O</strong> - загрузить</li>
-          <li><strong>Ctrl+Z</strong> - отменить</li>
-          <li><strong>L</strong> - рисовать линию</li>
-          <li><strong>S</strong> - разделить линии</li>
-          <li><strong>G</strong> - сетка вкл/выкл</li>
-          <li><strong>A</strong> - авторазбивка вкл/выкл</li>
-        </ul>
+        <div class="hotkeys-grid">
+          <div class="hotkey-item"><kbd>ESC</kbd> <span>Отмена действия</span>
+          </div>
+          <div class="hotkey-item"><kbd>Delete</kbd> <span>Удалить объект</span>
+          </div>
+          <div class="hotkey-item"><kbd>Ctrl+S</kbd> <span>Сохранить</span>
+          </div>
+          <div class="hotkey-item"><kbd>Ctrl+O</kbd> <span>Загрузить</span>
+          </div>
+          <div class="hotkey-item"><kbd>Ctrl+Z</kbd> <span>Отменить</span></div>
+          <div class="hotkey-item"><kbd>Ctrl+Y</kbd> <span>Повторить</span>
+          </div>
+          <div class="hotkey-item"><kbd>L</kbd> <span>Рисовать линию</span>
+          </div>
+          <div class="hotkey-item"><kbd>S</kbd> <span>Разделить линии</span>
+          </div>
+          <div class="hotkey-item"><kbd>C</kbd>
+            <span>Разделить по центрам</span></div>
+          <div class="hotkey-item"><kbd>G</kbd> <span>Сетка вкл/выкл</span>
+          </div>
+          <div class="hotkey-item"><kbd>A</kbd>
+            <span>Авторазбивка вкл/выкл</span></div>
+          <div class="hotkey-item"><kbd>Shift</kbd> + <kbd>Клик</kbd> <span>Быстрое добавление</span>
+          </div>
+        </div>
       </div>
     </div>
 
+    <!-- Холст -->
     <div class="canvas-container">
-      <div id="canvas-container">
+      <div id="canvas-wrapper">
         <canvas
           id="fabric-canvas"
-          width="1050"
-          height="600"
+          width="1200"
+          height="700"
         ></canvas>
       </div>
     </div>
@@ -144,6 +183,7 @@
 </div>
 
 <!-- Модальные окна -->
+<!-- Модальное окно свойств линии -->
 <div
   id="linePropertiesModal"
   class="modal"
@@ -239,6 +279,16 @@
           >
         </div>
       </div>
+      <div class="form-group">
+        <label for="propertyAirVolume">Объем воздуха линии (м³/с):</label>
+        <input
+          type="number"
+          id="propertyAirVolume"
+          step="0.001"
+          min="0"
+          value="0"
+        >
+      </div>
       <div class="modal-buttons">
         <button
           type="button"
@@ -256,6 +306,133 @@
   </div>
 </div>
 
+<!-- Модальное окно свойств объекта -->
+<div
+  id="objectPropertiesModal"
+  class="modal"
+>
+  <div class="modal-content">
+    <div class="modal-header">
+      <h2 class="modal-title">⚙️ Свойства объекта</h2>
+      <button
+        class="close-modal"
+        onclick="closeObjectPropertiesModal()"
+      >×
+      </button>
+    </div>
+    <form
+      id="objectPropertiesForm"
+      class="modal-form"
+    >
+      <div class="form-group">
+        <label class="form-label">Название:</label>
+        <input
+          type="text"
+          id="objPropertyName"
+          placeholder="Например: Вентилятор"
+          required
+        >
+      </div>
+      <div class="form-group">
+        <label class="form-label">Тип объекта:</label>
+        <select id="objPropertyType">
+          <option value="default">Обычный объект</option>
+          <option value="fan">Вентилятор</option>
+          <option value="fire">Пожарный датчик</option>
+          <option value="valve">Дверь</option>
+          <option value="pump">Насос</option>
+          <option value="sensor">Датчик</option>
+        </select>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">X:</label>
+          <input
+            type="number"
+            id="objPropertyX"
+            placeholder="X"
+            step="1"
+          >
+        </div>
+        <div class="form-group">
+          <label class="form-label">Y:</label>
+          <input
+            type="number"
+            id="objPropertyY"
+            placeholder="Y"
+            step="1"
+          >
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Ширина:</label>
+          <input
+            type="number"
+            id="objPropertyWidth"
+            placeholder="Ширина"
+            step="1"
+            min="10"
+            max="500"
+          >
+        </div>
+        <div class="form-group">
+          <label class="form-label">Высота:</label>
+          <input
+            type="number"
+            id="objPropertyHeight"
+            placeholder="Высота"
+            step="1"
+            min="10"
+            max="500"
+          >
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label for="objAirVolume">Объем воздуха (м³/с):</label>
+          <input
+            type="number"
+            step="0.1"
+            id="objAirVolume"
+            name="objAirVolume"
+          >
+        </div>
+        <div class="form-group">
+          <label for="objAirResistance">Сопротивление (Па):</label>
+          <input
+            type="number"
+            step="0.1"
+            id="objAirResistance"
+            name="objAirResistance"
+          >
+        </div>
+      </div>
+      <div class="modal-buttons">
+        <button
+          type="button"
+          class="btn btn-danger"
+          onclick="deleteCurrentObject()"
+        >
+          <span>🗑️</span> Удалить
+        </button>
+        <button
+          type="button"
+          class="btn btn-secondary"
+          onclick="closeObjectPropertiesModal()"
+        >Отмена
+        </button>
+        <button
+          type="submit"
+          class="btn btn-primary"
+        >Сохранить
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Модальное окно добавления изображения -->
 <div
   id="addImageModal"
   class="modal"
@@ -299,7 +476,6 @@
           <option value="valve">Дверь</option>
           <option value="pump">Насос</option>
           <option value="sensor">Датчик</option>
-          <option value="sensor3">Вентилятор основной</option>
         </select>
       </div>
       <div class="modal-buttons">
@@ -319,6 +495,7 @@
   </div>
 </div>
 
+<!-- Модальное окно информации о точке -->
 <div
   id="intersectionPointModal"
   class="modal"
@@ -349,202 +526,6 @@
   </div>
 </div>
 
-<!-- Модальное окно свойств объекта -->
-<div
-  id="objectPropertiesModal"
-  class="modal"
->
-  <div class="modal-content">
-    <div class="modal-header">
-      <h2 class="modal-title">⚙️ Свойства объекта</h2>
-      <button
-        class="close-modal"
-        onclick="closeObjectPropertiesModal()"
-      >×
-      </button>
-    </div>
-    <form
-      id="objectPropertiesForm"
-      class="modal-form"
-    >
-      <div class="form-group">
-        <label class="form-label">Название:</label>
-        <input
-          type="text"
-          id="objPropertyName"
-          placeholder="Например: Вентилятор"
-          required
-        >
-      </div>
-
-      <div class="form-group">
-        <label class="form-label">Тип объекта:</label>
-        <select id="objPropertyType">
-          <option value="fan">Вентилятор</option>
-          <option value="fire">Датчик пожарный</option>
-          <option value="valve">Клапан</option>
-          <option value="pump">Насос</option>
-          <option value="sensor">Датчик</option>
-          <option value="custom">Пользовательский</option>
-        </select>
-      </div>
-
-      <div class="form-group">
-        <label class="form-label">Позиция (X, Y):</label>
-        <div class="form-row">
-          <div class="form-group">
-            <input
-              type="number"
-              id="objPropertyX"
-              placeholder="X"
-              step="1"
-            >
-          </div>
-          <div class="form-group">
-            <input
-              type="number"
-              id="objPropertyY"
-              placeholder="Y"
-              step="1"
-            >
-          </div>
-        </div>
-      </div>
-
-      <div class="form-group">
-        <label class="form-label">Размер (ширина, высота):
-        </label>
-        <div class="form-row">
-          <div class="form-group">
-            <input
-              type="number"
-              id="objPropertyWidth"
-              placeholder="Ширина"
-              step="1"
-              min="10"
-              max="500"
-            >
-          </div>
-          <div class="form-group">
-            <input
-              type="number"
-              id="objPropertyHeight"
-              placeholder="Высота"
-              step="1"
-              min="10"
-              max="500"
-            >
-          </div>
-        </div>
-      </div>
-
-      <div class="form-group">
-        <label class="form-label">Объем воздуха, Сопротивление воздуха:</label>
-        <div class="form-row">
-          <div class="form-group">
-            <label for="objAirVolume">Объем воздуха (м³/с):</label>
-            <input
-              type="number"
-              step="0.1"
-              id="objAirVolume"
-              name="objAirVolume"
-            >
-          </div>
-          <div class="form-group">
-            <label for="objAirResistance">Сопротивление воздуха (Па):</label>
-            <input
-              type="number"
-              step="0.1"
-              id="objAirResistance"
-              name="objAirResistance"
-            >
-          </div>
-        </div>
-      </div>
-
-      <div class="form-group">
-        <label class="form-label">Поворот (°):</label>
-        <input
-          type="number"
-          id="objPropertyRotation"
-          min="0"
-          max="360"
-          step="1"
-          value="0"
-        >
-      </div>
-
-      <div class="form-group">
-        <label class="form-label">Непрозрачность:</label>
-        <div style="display: flex; align-items: center; gap: 10px;">
-          <input
-            type="range"
-            id="objPropertyOpacity"
-            min="10"
-            max="100"
-            value="100"
-            style="flex: 1;"
-          >
-          <span
-            id="opacityValue"
-            style="min-width: 40px; text-align: right; font-size: 12px; color: #666;"
-          >100%</span>
-        </div>
-      </div>
-
-      <div class="form-group">
-        <label class="form-label">Примечания:</label>
-        <textarea
-          id="objPropertyNotes"
-          rows="3"
-          placeholder="Дополнительные заметки..."
-        ></textarea>
-      </div>
-
-      <div class="form-group">
-        <label class="form-label">Пользовательские данные (JSON):</label>
-        <textarea
-          id="objPropertyCustomData"
-          rows="3"
-          placeholder='{"key": "value"}'
-        ></textarea>
-        <small style="color: #666; font-size: 11px; display: block; margin-top: 4px;">
-          Введите валидный JSON для дополнительных свойств
-        </small>
-      </div>
-
-      <div
-        class="modal-buttons"
-        style="display: flex; gap: 10px; margin-top: 20px;"
-      >
-        <button
-          type="button"
-          class="btn btn-danger"
-          onclick="deleteCurrentObject()"
-          style="flex: 1;"
-        >
-          <span>🗑️</span> Удалить
-        </button>
-        <button
-          type="button"
-          class="btn btn-secondary"
-          onclick="closeObjectPropertiesModal()"
-          style="flex: 1;"
-        >
-          Отмена
-        </button>
-        <button
-          type="submit"
-          class="btn btn-primary"
-          style="flex: 1;"
-        >
-          Сохранить
-        </button>
-      </div>
-    </form>
-  </div>
-</div>
-
 <!-- Контекстное меню -->
 <div
   id="contextMenu"
@@ -553,43 +534,34 @@
   <div
     class="context-menu-item"
     onclick="deleteObject()"
-  ><span>🗑️</span> Удалить
+  >
+    <span>🗑️</span> Удалить
   </div>
   <div
     class="context-menu-item"
     onclick="duplicateObject()"
-  ><span>🔁</span> Дублировать
+  >
+    <span>🔁</span> Дублировать
   </div>
   <div
     class="context-menu-item"
     onclick="bringObjectToFront()"
-  ><span>⬆️</span> На передний план
+  >
+    <span>⬆️</span> На передний план
   </div>
   <div
     class="context-menu-item"
     onclick="sendObjectToBack()"
-  ><span>⬇️</span> На задний план
+  >
+    <span>⬇️</span> На задний план
   </div>
 </div>
 
-<!-- Уведомления -->
+<!-- Контейнер для уведомлений -->
 <div id="notificationContainer"></div>
 
-<!-- <script src="./js-23-01-26/js23-01-26-2.js"></script>-->
-<!--<script src="./js-23-01-26/js24-01-26.js"></script>-->
-<!--<script src="./js-23-01-26/js24-01-26-2.js"></script>-->
-<!--<script src="./js-23-01-26/js24-01-26-3.js"></script>-->
-<!--  <script src="./js-23-01-26/js24-01-26-4.js"></script>-->
-
-<!--<script src="./js-23-01-26/js24-01-26-5.js"></script>-->
-
-<!--<script src="./js-23-01-26/js27-01-26-1.js"></script>-->
-
-<!--работает расчет коэф сопротивления в js30-01-26-1.js-->
-<!--<script src="./js-23-01-26/js30-01-26-1.js"></script>-->
-
-<!--попытка расчета ваздуха в js31-01-26-1.js-->
-<script src="./js-23-01-26/js31-01-26-1.js"></script>
+<!--<script src="./js-23-01-26/editor-31-01-2026.js"></script>-->
+<!--<script src="./js-23-01-26/editor-02-02-2026.js"></script>-->
+<script src="./js-23-01-26/editor-02-02-2026-otobrajenie.js"></script>
 </body>
-
 </html>

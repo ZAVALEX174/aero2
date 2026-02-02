@@ -12,7 +12,7 @@ body {
 }
 
 .container {
-  max-width: 1400px;
+  max-width: 100%;
   margin: 0 auto;
   background: white;
   border-radius: 12px;
@@ -69,14 +69,14 @@ h1 {
   display: block;
 }
 
-#tools {
+#tools, .control-buttons, .image-library #imageLibraryGrid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
   gap: 8px;
   margin-bottom: 20px;
 }
 
-#tools button {
+#tools button, .control-buttons button {
   background: white;
   border: 1px solid #dee2e6;
   border-radius: 6px;
@@ -618,7 +618,6 @@ h1 {
 }
 
 
-
 /*===========================*/
 
 /* Общие стили для всех модальных окон */
@@ -987,4 +986,27 @@ h1 {
   margin: 0;
   white-space: pre-wrap;
   word-wrap: break-word;
+}
+
+.btn-small {
+  padding: 6px 12px;
+  font-size: 12px;
+  background: #4A00E0;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 0.3s;
+}
+
+.btn-small:hover {
+  background: #3a00b0;
+}
+
+.btn-small.danger {
+  background: #ff4757;
+}
+
+.btn-small.danger:hover {
+  background: #ff3742;
 }

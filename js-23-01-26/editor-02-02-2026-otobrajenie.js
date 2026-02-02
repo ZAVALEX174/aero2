@@ -71,6 +71,81 @@ function formatTo5(value) {
   return roundTo5(value).toFixed(5);
 }
 
+// ==================== ФУНКЦИИ ДЛЯ ОТОБРАЖЕНИЯ ОБЪЕМА ВОЗДУХА ====================
+function createOrUpdateAirVolumeText(line) {
+  // Удаляем старый текст, если он существует
+  if (line.airVolumeText) {
+    canvas.remove(line.airVolumeText);
+    line.airVolumeText = null;
+  }
+
+  // Если у линии нет свойства airVolume, не создаем текст
+  if (!line.properties || line.properties.airVolume === undefined || line.properties.airVolume === null) {
+    return;
+  }
+
+  // Вычисляем середину линии
+  const midX = (line.x1 + line.x2) / 2;
+  const midY = (line.y1 + line.y2) / 2;
+
+  // Вычисляем угол линии для правильной ориентации текста
+  const angle = Math.atan2(line.y2 - line.y1, line.x2 - line.x1);
+  const degrees = angle * (180 / Math.PI); // ИСПРАВЛЕНО: было Math.Path.PI
+
+  // Определяем смещение текста относительно линии
+  const offset = 20;
+  const offsetX = Math.sin(angle) * offset;
+  const offsetY = -Math.cos(angle) * offset;
+
+  // Создаем текст с объемом воздуха
+  const airVolumeText = new fabric.Text(`${formatTo5(line.properties.airVolume)} м³/с`, {
+    left: midX + offsetX,
+    top: midY + offsetY,
+    fontSize: 12,
+    fontFamily: 'Arial, sans-serif',
+    fill: line.stroke || APP_CONFIG.DEFAULT_LINE_COLOR,
+    fontWeight: 'bold',
+    backgroundColor: 'rgba(255, 255, 255, 0.8)',
+    textBackgroundColor: 'rgba(255, 255, 255, 0.8)',
+    padding: 3,
+    selectable: false,
+    evented: false,
+    originX: 'center',
+    originY: 'center',
+    angle: degrees,
+    id: 'air-volume-text-' + (line.id || Date.now()),
+    lineReference: line
+  });
+
+  // Сохраняем ссылку на текст в линии
+  line.airVolumeText = airVolumeText;
+
+  // Добавляем текст на холст
+  canvas.add(airVolumeText);
+
+  // Перемещаем текст на передний план
+  airVolumeText.bringToFront();
+}
+
+function updateAllAirVolumeTexts() {
+  const lines = canvas.getObjects().filter(obj =>
+    obj.type === 'line' && obj.id !== 'grid-line'
+  );
+
+  lines.forEach(line => {
+    createOrUpdateAirVolumeText(line);
+  });
+
+  canvas.renderAll();
+}
+
+function removeAirVolumeText(line) {
+  if (line.airVolumeText) {
+    canvas.remove(line.airVolumeText);
+    line.airVolumeText = null;
+  }
+}
+
 // ==================== РАСЧЕТНЫЕ ФУНКЦИИ ====================
 function calculateLinePerimeter(crossSectionalArea) {
   return roundTo5(3.8 * Math.sqrt(crossSectionalArea));
@@ -242,13 +317,14 @@ function calculateAirVolumesForAllLines() {
     }
   }
 
-  // Шаг 3: Обновляем линии, если нужно
+  // Шаг 3: Обновляем линии и их текстовые метки, если нужно
   if (linesToUpdate.size > 0) {
     linesToUpdate.forEach(line => {
       line.set('properties', line.properties);
-      canvas.renderAll();
+      createOrUpdateAirVolumeText(line);
     });
 
+    canvas.renderAll();
     updatePropertiesPanel();
     return true;
   }
@@ -413,6 +489,7 @@ function setupCanvasEvents() {
 
   canvas.on('object:added', handleObjectAdded);
   canvas.on('object:modified', handleObjectModified);
+  canvas.on('object:removed', handleObjectRemoved);
 }
 
 function handleCanvasMouseDown(options) {
@@ -479,9 +556,11 @@ function handleCanvasDoubleClick(options) {
 }
 
 function handleObjectAdded(e) {
-  if (e.target && e.target.id !== 'intersection-point' && e.target.id !== 'intersection-point-label') {
+  if (e.target && e.target.id !== 'intersection-point' && e.target.id !== 'intersection-point-label' && e.target.id !== 'air-volume-text') {
     setTimeout(() => {
       bringIntersectionPointsToFront();
+      // Обновляем тексты объемов воздуха для всех линий
+      updateAllAirVolumeTexts();
     }, 10);
   }
 }
@@ -489,6 +568,15 @@ function handleObjectAdded(e) {
 function handleObjectModified(e) {
   if (e.target && e.target.type === 'line' && e.target.properties) {
     calculateAllLineProperties(e.target);
+    // Обновляем текст объема воздуха при изменении линии
+    createOrUpdateAirVolumeText(e.target);
+  }
+}
+
+function handleObjectRemoved(e) {
+  // Удаляем текст объема воздуха при удалении линии
+  if (e.target && e.target.type === 'line' && e.target.airVolumeText) {
+    removeAirVolumeText(e.target);
   }
 }
 
@@ -580,6 +668,9 @@ function handleLineDrawing(options, pointer) {
       airVolume = roundTo5(lineStartPoint.object.properties.airVolume);
     }
 
+    // Генерируем уникальный ID для линии
+    const lineId = 'line_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+
     const finalLine = new fabric.Line([
       lineStartPoint.x, lineStartPoint.y, snappedX, snappedY
     ], {
@@ -590,6 +681,7 @@ function handleLineDrawing(options, pointer) {
       hasControls: true,
       hasBorders: true,
       lockRotation: false,
+      id: lineId,
       properties: {
         name: document.getElementById('propertyName')?.value || `Линия`,
         passageLength: passageLength,
@@ -622,6 +714,10 @@ function handleLineDrawing(options, pointer) {
 
     saveToUndoStack();
     canvas.add(finalLine);
+
+    // Создаем текст с объемом воздуха для новой линии
+    createOrUpdateAirVolumeText(finalLine);
+
     canvas.setActiveObject(finalLine);
     updatePropertiesPanel();
 
@@ -1073,6 +1169,7 @@ function splitAllLines() {
       if (splitResult1) {
         saveToUndoStack();
         canvas.remove(inter.line1);
+        removeAirVolumeText(inter.line1);
         canvas.add(splitResult1.line1);
         canvas.add(splitResult1.line2);
       }
@@ -1080,6 +1177,7 @@ function splitAllLines() {
       if (splitResult2) {
         saveToUndoStack();
         canvas.remove(inter.line2);
+        removeAirVolumeText(inter.line2);
         canvas.add(splitResult2.line1);
         canvas.add(splitResult2.line2);
       }
@@ -1092,12 +1190,18 @@ function splitAllLines() {
         if (splitResult) {
           saveToUndoStack();
           canvas.remove(inter.line1);
+          removeAirVolumeText(inter.line1);
           canvas.add(splitResult.line1);
           canvas.add(splitResult.line2);
         }
       }
     }
   });
+
+  // Обновляем тексты объемов воздуха для всех линий
+  setTimeout(() => {
+    updateAllAirVolumeTexts();
+  }, 50);
 
   canvas.renderAll();
   bringIntersectionPointsToFront();
@@ -1144,6 +1248,7 @@ function splitAllLinesAtObjectCenters() {
           if (splitResult) {
             saveToUndoStack();
             canvas.remove(line);
+            removeAirVolumeText(line);
             canvas.add(splitResult.line1);
             canvas.add(splitResult.line2);
             splitCount++;
@@ -1152,6 +1257,11 @@ function splitAllLinesAtObjectCenters() {
       }
     });
   });
+
+  // Обновляем тексты объемов воздуха для всех линий
+  setTimeout(() => {
+    updateAllAirVolumeTexts();
+  }, 50);
 
   setTimeout(() => {
     clearIntersectionPoints();
@@ -1323,6 +1433,10 @@ function splitLineAtPoint(line, point) {
 
   const airVolume = roundTo5(props.airVolume || 0);
 
+  // Генерируем уникальные ID для новых линий
+  const line1Id = 'line_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+  const line2Id = 'line_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+
   const line1 = new fabric.Line([
     line.x1, line.y1,
     point.x, point.y
@@ -1335,6 +1449,7 @@ function splitLineAtPoint(line, point) {
     hasControls: true,
     hasBorders: true,
     lockRotation: false,
+    id: line1Id,
     properties: {
       ...props,
       length: distance1,
@@ -1359,6 +1474,7 @@ function splitLineAtPoint(line, point) {
     hasControls: true,
     hasBorders: true,
     lockRotation: false,
+    id: line2Id,
     properties: {
       ...props,
       length: distance2,
@@ -1410,6 +1526,7 @@ function splitLinesAtImagePosition(image) {
         if (splitResult) {
           saveToUndoStack();
           canvas.remove(line);
+          removeAirVolumeText(line);
           canvas.add(splitResult.line1);
           canvas.add(splitResult.line2);
           splitCount++;
@@ -1417,6 +1534,11 @@ function splitLinesAtImagePosition(image) {
       }
     }
   });
+
+  // Обновляем тексты объемов воздуха для всех линий
+  setTimeout(() => {
+    updateAllAirVolumeTexts();
+  }, 50);
 
   if (splitCount > 0) {
     showNotification(`Разделено ${splitCount} линий по центру объектов`, 'success');
@@ -1844,6 +1966,9 @@ function showIntersectionPointInfo(pointIndex) {
         <button onclick="calculateAirVolumesForAllLines()" class="btn-small" style="background: #0984e3;">
           🌐 Пересчитать все
         </button>
+        <button onclick="toggleAirVolumeTexts()" class="btn-small" style="background: #6c5ce7;" id="toggleTextsBtn">
+          👁️ Скрыть тексты
+        </button>
       </div>
     </div>
   `;
@@ -1960,6 +2085,7 @@ window.recalculateAirVolumeAtPoint = function (pointIndex) {
         if (!line.properties.airVolume || line.properties.airVolume !== pointData.object.properties.airVolume) {
           line.properties.airVolume = roundTo5(pointData.object.properties.airVolume);
           line.set('properties', line.properties);
+          createOrUpdateAirVolumeText(line);
           updated = true;
         }
       }
@@ -1986,6 +2112,7 @@ window.recalculateAirVolumeAtPoint = function (pointIndex) {
         startingLine.properties.airVolume !== endingLine.properties.airVolume) {
         startingLine.properties.airVolume = roundTo5(endingLine.properties.airVolume);
         startingLine.set('properties', startingLine.properties);
+        createOrUpdateAirVolumeText(startingLine);
         updated = true;
       }
     }
@@ -1999,6 +2126,34 @@ window.recalculateAirVolumeAtPoint = function (pointIndex) {
     showIntersectionPointInfo(pointIndex);
   } else {
     showNotification('Изменений не требуется', 'info');
+  }
+};
+
+// Функция для показа/скрытия текстов объемов воздуха
+window.toggleAirVolumeTexts = function () {
+  const lines = canvas.getObjects().filter(obj =>
+    obj.type === 'line' && obj.id !== 'grid-line'
+  );
+
+  const btn = document.getElementById('toggleTextsBtn');
+  const allTextsVisible = lines.every(line =>
+    !line.airVolumeText || (line.airVolumeText && line.airVolumeText.visible)
+  );
+
+  lines.forEach(line => {
+    if (line.airVolumeText) {
+      line.airVolumeText.set('visible', !allTextsVisible);
+    }
+  });
+
+  canvas.renderAll();
+
+  if (allTextsVisible) {
+    btn.innerHTML = '👁️ Показать тексты';
+    showNotification('Тексты объемов воздуха скрыты', 'info');
+  } else {
+    btn.innerHTML = '👁️ Скрыть тексты';
+    showNotification('Тексты объемов воздуха показаны', 'info');
   }
 };
 
@@ -2265,6 +2420,9 @@ function applyLineProperties() {
     properties: newProperties
   });
 
+  // Обновляем текст объема воздуха для линии
+  createOrUpdateAirVolumeText(currentEditingLine);
+
   // Вызываем перерасчет объемов воздуха после изменения свойств линии
   setTimeout(() => {
     calculateAirVolumesForAllLines();
@@ -2351,6 +2509,19 @@ function applyObjectProperties() {
     currentEditingObject.set(updates);
     canvas.renderAll();
 
+    // Обновляем тексты объемов воздуха для всех линий, связанных с этим объектом
+    const lines = canvas.getObjects().filter(obj =>
+      obj.type === 'line' && obj.id !== 'grid-line'
+    );
+
+    lines.forEach(line => {
+      if (line.lineStartsFromObject && line.startObject &&
+        (line.startObject.id === currentEditingObject.id ||
+          line.startObject._id === currentEditingObject._id)) {
+        createOrUpdateAirVolumeText(line);
+      }
+    });
+
     // Вызываем перерасчет объемов воздуха после изменения свойств объекта
     setTimeout(() => {
       calculateAirVolumesForAllLines();
@@ -2369,6 +2540,12 @@ function deleteCurrentObject() {
   if (!currentEditingObject || !confirm('Удалить этот объект?')) return;
 
   saveToUndoStack();
+
+  // Если удаляем линию, удаляем и ее текст
+  if (currentEditingObject.type === 'line') {
+    removeAirVolumeText(currentEditingObject);
+  }
+
   canvas.remove(currentEditingObject);
   canvas.renderAll();
 
@@ -2517,6 +2694,9 @@ window.showAirVolumeReport = function () {
         <button onclick="calculateAirVolumesForAllLines()" class="btn-small" style="background: #0984e3;">
           🔄 Пересчитать все
         </button>
+        <button onclick="updateAllAirVolumeTexts()" class="btn-small" style="background: #00b894;">
+          📝 Обновить тексты
+        </button>
         <button onclick="closeAirVolumeReport()" class="btn-small">
           ✕ Закрыть
         </button>
@@ -2569,7 +2749,7 @@ function addAirVolumeReportButton() {
 
 // ==================== УПРАВЛЕНИЕ ПРОЕКТОМ ====================
 function saveDrawing() {
-  const json = JSON.stringify(canvas.toJSON(['id', 'properties', 'pointIndex', 'pointData', 'lineStartsFromObject', 'startObject']));
+  const json = JSON.stringify(canvas.toJSON(['id', 'properties', 'pointIndex', 'pointData', 'lineStartsFromObject', 'startObject', 'airVolumeText']));
   localStorage.setItem('fabricDrawing', json);
 
   const blob = new Blob([json], {type: 'application/json'});
@@ -2625,8 +2805,9 @@ function loadDrawing() {
             }
           });
 
-          // Вызываем расчет объемов воздуха после загрузки чертежа
+          // Обновляем тексты объемов воздуха для всех линий после загрузки
           setTimeout(() => {
+            updateAllAirVolumeTexts();
             calculateAirVolumesForAllLines();
           }, 100);
 
@@ -2686,8 +2867,9 @@ function undoAction() {
 
   const previousState = undoStack[undoStack.length - 1];
   canvas.loadFromJSON(previousState, function () {
-    // После отмены вызываем расчет объемов воздуха
+    // После отмены вызываем расчет объемов воздуха и обновление текстов
     setTimeout(() => {
+      updateAllAirVolumeTexts();
       calculateAirVolumesForAllLines();
     }, 10);
     canvas.renderAll();
@@ -2706,8 +2888,9 @@ function redoAction() {
   undoStack.push(nextState);
 
   canvas.loadFromJSON(nextState, function () {
-    // После повтора вызываем расчет объемов воздуха
+    // После повтора вызываем расчет объемов воздуха и обновление текстов
     setTimeout(() => {
+      updateAllAirVolumeTexts();
       calculateAirVolumesForAllLines();
     }, 10);
     canvas.renderAll();
@@ -2743,6 +2926,12 @@ function setupKeyboardShortcuts() {
       const activeObject = canvas.getActiveObject();
       if (activeObject) {
         saveToUndoStack();
+
+        // Удаляем текст объема воздуха, если удаляем линию
+        if (activeObject.type === 'line') {
+          removeAirVolumeText(activeObject);
+        }
+
         canvas.remove(activeObject);
         updatePropertiesPanel();
         updateStatus();
@@ -2796,6 +2985,12 @@ function setupKeyboardShortcuts() {
           window.showAirVolumeReport();
         } else {
           calculateAirVolumesForAllLines();
+        }
+        break;
+      case 't':
+        event.preventDefault();
+        if (event.altKey) {
+          window.toggleAirVolumeTexts();
         }
         break;
     }
@@ -2861,6 +3056,12 @@ function deleteObject() {
   if (!activeObject) return;
 
   saveToUndoStack();
+
+  // Удаляем текст объема воздуха, если удаляем линию
+  if (activeObject.type === 'line') {
+    removeAirVolumeText(activeObject);
+  }
+
   canvas.remove(activeObject);
   canvas.renderAll();
   updatePropertiesPanel();
@@ -2954,6 +3155,7 @@ function calculateAllPropertiesForAllLines() {
   lines.forEach(line => {
     if (line.properties) {
       normalizeLineProperties(line);
+      createOrUpdateAirVolumeText(line);
       updatedCount++;
     }
   });

@@ -653,23 +653,174 @@ function snapToGrid(value, gridSize = APP_CONFIG.GRID_SIZE) {
 
 // ==================== ИЗОБРАЖЕНИЯ ====================
 const defaultImages = [
-  {id: 'fan1', name: 'Вентилятор основной', path: './img/fan.png', type: 'fan'},
-  {id: 'fan2', name: 'Вентилятор', path: './img/fan2.png', type: 'fan'},
-  {id: 'fire', name: 'Датчик пожарный', path: './img/fire.png', type: 'fire'},
+  {
+    id: 'fan1',
+    name: 'Вентилятор основной',
+    icon: '🌀',
+    path: './img/fan.png',
+    type: 'fan'
+  },
+  {
+    id: 'fan2',
+    name: 'Вентилятор',
+    icon: '🌀',
+    path: './img/fan2.png',
+    type: 'fan'
+  },
+  {
+    id: 'fire',
+    name: 'Датчик пожарный',
+    icon: '🔥',
+    path: './img/fire.png',
+    type: 'fire'
+  },
+  {
+    id: 'fire2',
+    name: 'Пожарный гидрант',
+    icon: '🔥',
+    path: './img/pozarniigidrant.png',
+    type: 'fire'
+  },
+  {
+    id: 'fire3',
+    name: 'Пожарный склад',
+    icon: '🔥',
+    path: './img/scladprotivopozar.png',
+    type: 'fire'
+  },
   {
     id: 'valve',
     name: 'Дверь Закрытая',
+    icon: '🔧',
     path: './img/dvercloses.png',
     type: 'valve'
   },
   {
     id: 'valve2',
-    name: 'Дверь открытая',
+    name: 'Дверь металлическая открытая',
+    icon: '🔧',
     path: './img/dveropenmetall.png',
     type: 'valve'
   },
-  {id: 'pump', name: 'Насос', path: './img/nanospogruznoi.png', type: 'pump'},
-  {id: 'sensor', name: 'Датчик', path: './img/samohodnoe.png', type: 'sensor'}
+  {
+    id: 'valve3',
+    name: 'Дверь с вент решоткой',
+    icon: '🔧',
+    path: './img/dverventrech.png',
+    type: 'valve'
+  },
+  {
+    id: 'valve4',
+    name: 'Дверь деревянная с вент окном',
+    icon: '🔧',
+    path: './img/dverwentoknowood.png',
+    type: 'valve'
+  },
+  {
+    id: 'valve5',
+    name: 'Перемычка бетонная',
+    icon: '🔧',
+    path: './img/petemichkabeton.png',
+    type: 'valve'
+  },
+  {
+    id: 'valve6',
+    name: 'Перемычка кирпичная',
+    icon: '🔧',
+    path: './img/petemichkakirpich.png',
+    type: 'valve'
+  },
+  {
+    id: 'valve7',
+    name: 'Перемычка металличесая',
+    icon: '🔧',
+    path: './img/petemichkametall.png',
+    type: 'valve'
+  },
+  {
+    id: 'valve8',
+    name: 'Перемычка деревянная',
+    icon: '🔧',
+    path: './img/petemichkawood.png',
+    type: 'valve'
+  },
+  {
+    id: 'valve9',
+    name: 'Проход',
+    icon: '🔧',
+    path: './img/prohod.png',
+    type: 'valve'
+  },
+  {
+    id: 'valve10',
+    name: 'Запасной вход',
+    icon: '🔧',
+    path: './img/zapasvhod.png',
+    type: 'valve'
+  },
+  {
+    id: 'pump',
+    name: 'Насос погружной',
+    icon: '⚙️',
+    path: './img/nanospogruznoi.png',
+    type: 'pump'
+  },
+  {
+    id: 'pump2',
+    name: 'Насосная станция',
+    icon: '⚙️',
+    path: './img/nasosnayastancia.png',
+    type: 'pump'
+  },
+  {
+    id: 'sensor',
+    name: 'Самоходное оборудование',
+    icon: '📡',
+    path: './img/samohodnoe.png',
+    type: 'sensor'
+  },
+  {
+    id: 'sensor2',
+    name: 'Люди',
+    icon: '📡',
+    path: './img/people.png',
+    type: 'sensor'
+  },
+  {
+    id: 'sensor3',
+    name: 'Телефон',
+    icon: '📡',
+    path: './img/phone.png',
+    type: 'sensor'
+  },
+  {
+    id: 'sensor4',
+    name: 'Взрывные работы',
+    icon: '📡',
+    path: './img/vzrivnieraboti.png',
+    type: 'sensor'
+  },
+  {
+    id: 'sensor5',
+    name: 'Массовые взрывные работы',
+    icon: '📡',
+    path: './img/massovievzivniepaboti.png',
+    type: 'sensor'
+  },
+  {
+    id: 'sensor6',
+    name: 'Медпункт',
+    icon: '📡',
+    path: './img/medpunkt.png',
+    type: 'sensor'
+  },
+  {
+    id: 'sensor7',
+    name: 'Надшахтное оборудование',
+    icon: '📡',
+    path: './img/nadshahtnoe.png',
+    type: 'sensor'
+  }
 ];
 
 let allImages = [...defaultImages];
@@ -772,7 +923,29 @@ function splitAllLines() {
 
   intersections.forEach((inter, index) => {
     if (inter.line1 && inter.line2) {
-      splitLinesAtPoint(inter);
+      // Разделяем обе линии в точке пересечения
+      const splitResult1 = splitLineAtPoint(inter.line1, {
+        x: inter.x,
+        y: inter.y
+      });
+      const splitResult2 = splitLineAtPoint(inter.line2, {
+        x: inter.x,
+        y: inter.y
+      });
+
+      if (splitResult1) {
+        saveToUndoStack();
+        canvas.remove(inter.line1);
+        canvas.add(splitResult1.line1);
+        canvas.add(splitResult1.line2);
+      }
+
+      if (splitResult2) {
+        saveToUndoStack();
+        canvas.remove(inter.line2);
+        canvas.add(splitResult2.line1);
+        canvas.add(splitResult2.line2);
+      }
     } else if (inter.line1 && inter.object) {
       if (lineSplitMode !== 'MANUAL' || autoSplitMode) {
         const splitResult = splitLineAtPoint(inter.line1, {
@@ -1111,6 +1284,7 @@ function splitLinesAtImagePosition(image) {
 }
 
 // ==================== ТОЧКИ ПЕРЕСЕЧЕНИЯ ====================
+// ==================== ТОЧКИ ПЕРЕСЕЧЕНИЯ ====================
 function createIntersectionPoint(x, y, index, intersectionData, customColor = '#ff4757') {
   const circle = new fabric.Circle({
     left: roundTo5(x - 6),
@@ -1144,9 +1318,13 @@ function createIntersectionPoint(x, y, index, intersectionData, customColor = '#
     id: 'intersection-point-label'
   });
 
+  // ИЗМЕНЕНИЕ: Теперь левая кнопка мыши открывает модальное окно
   circle.on('mousedown', function (e) {
-    if (e.button === 1) {
+    if (e.e.button === 0) { // Левая кнопка мыши
+      e.e.preventDefault();
+      e.e.stopPropagation();
       showIntersectionPointInfo(index);
+      return false;
     }
   });
 
@@ -1208,6 +1386,421 @@ function clearIntersectionPoints() {
   intersectionPoints = [];
   intersectionVisuals = [];
 }
+
+// ==================== МОДАЛЬНОЕ ОКНО ИНФОРМАЦИИ О ТОЧКЕ ====================
+// ==================== МОДАЛЬНОЕ ОКНО ИНФОРМАЦИИ О ТОЧКЕ ====================
+function showIntersectionPointInfo(pointIndex) {
+  const pointData = intersectionPoints[pointIndex];
+  if (!pointData) {
+    showNotification('Точка не найдена', 'error');
+    return;
+  }
+
+  const allLines = canvas.getObjects().filter(obj =>
+    obj.type === 'line' && obj.id !== 'grid-line'
+  );
+
+  const allObjects = canvas.getObjects().filter(obj =>
+    obj.type !== 'line' && obj.id !== 'grid-group' && obj.id !== 'grid-line'
+  );
+
+  const linesStartingHere = [];
+  const linesEndingHere = [];
+  const objectsAtPoint = [];
+  const threshold = 0.00001;
+
+  allLines.forEach(line => {
+    const startDist = roundTo5(Math.sqrt(Math.pow(line.x1 - pointData.x, 2) + Math.pow(line.y1 - pointData.y, 2)));
+    const endDist = roundTo5(Math.sqrt(Math.pow(line.x2 - pointData.x, 2) + Math.pow(line.y2 - pointData.y, 2)));
+
+    if (startDist < threshold) {
+      linesStartingHere.push({
+        line: line,
+        type: 'start',
+        distance: startDist
+      });
+    } else if (endDist < threshold) {
+      linesEndingHere.push({
+        line: line,
+        type: 'end',
+        distance: endDist
+      });
+    }
+  });
+
+  allObjects.forEach(obj => {
+    const objRect = getObjectRect(obj);
+    if (pointData.x >= objRect.left && pointData.x <= objRect.right &&
+      pointData.y >= objRect.top && pointData.y <= objRect.bottom) {
+      objectsAtPoint.push(obj);
+    }
+  });
+
+  let html = `
+    <div class="property-group">
+      <h4>📌 Точка разделения #${pointIndex + 1}</h4>
+      <div class="property-row">
+        <div class="property-label">Координаты:</div>
+        <div class="property-value">X: ${formatTo5(pointData.x)}, Y: ${formatTo5(pointData.y)}</div>
+      </div>
+      <div class="property-row">
+        <div class="property-label">Тип:</div>
+        <div class="property-value">
+  `;
+
+  if (pointData.type === 'object-center') {
+    html += 'Центр объекта';
+  } else if (pointData.type === 'object-edge') {
+    html += 'Край объекта';
+  } else if (pointData.line1 && pointData.line2) {
+    html += 'Пересечение линий';
+  } else {
+    html += 'Пересечение линии с объектом';
+  }
+
+  html += `
+        </div>
+      </div>
+      <div class="property-row">
+        <div class="property-label">Статистика:</div>
+        <div class="property-value">
+          🟢 ${linesStartingHere.length} начала | 🔴 ${linesEndingHere.length} окончаний | 🖼️ ${objectsAtPoint.length} объектов
+        </div>
+      </div>
+  `;
+
+  // Отображаем дополнительные данные в зависимости от типа точки
+  if (pointData.type === 'object-center' && pointData.object) {
+    const obj = pointData.object;
+    const center = getObjectCenter(obj);
+    const props = obj.properties || {};
+
+    html += `
+      <div class="property-group">
+        <h4>🎯 Центр объекта:</h4>
+        <div class="property-row">
+          <div class="property-label">Объект:</div>
+          <div class="property-value">${props.name || 'Объект'}</div>
+        </div>
+        <div class="property-row">
+          <div class="property-label">Координаты центра:</div>
+          <div class="property-value">X: ${formatTo5(center.x)}, Y: ${formatTo5(center.y)}</div>
+        </div>
+      </div>
+    `;
+  }
+
+  if (pointData.line1 && pointData.line2) {
+    html += `
+      <div class="property-group">
+        <h4>📐 Информация о пересечении:</h4>
+        <div class="property-row">
+          <div class="property-label">Тип:</div>
+          <div class="property-value">Пересечение двух линий</div>
+        </div>
+        ${pointData.ua !== undefined ? `
+        <div class="property-row">
+          <div class="property-label">Положение на линии 1:</div>
+          <div class="property-value">${formatTo5(pointData.ua * 100)}% от начала</div>
+        </div>
+        ` : ''}
+        ${pointData.ub !== undefined ? `
+        <div class="property-row">
+          <div class="property-label">Положение на линии 2:</div>
+          <div class="property-value">${formatTo5(pointData.ub * 100)}% от начала</div>
+        </div>
+        ` : ''}
+      </div>
+    `;
+  }
+
+  if (objectsAtPoint.length > 0) {
+    html += `
+      <div class="property-group">
+        <h4>🖼️ Объекты в точке:</h4>
+    `;
+
+    objectsAtPoint.forEach((obj, index) => {
+      const props = obj.properties || {};
+
+      html += `
+        <div class="property-group" style="margin-top: 10px; border-left: 3px solid #4A00E0; padding-left: 10px; background: #f8f9fa; padding: 10px; border-radius: 4px;">
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <h5 style="margin: 5px 0;">${props.name || `Объект ${index + 1}`} (${obj.type})</h5>
+          </div>
+          
+          <div class="property-row">
+            <div class="property-label">Тип объекта:</div>
+            <div class="property-value">${props.type || 'Не указан'}</div>
+          </div>
+          <div class="property-row">
+            <div class="property-label">Размер:</div>
+            <div class="property-value">${formatTo5(obj.width * (obj.scaleX || 1))} × ${formatTo5(obj.height * (obj.scaleY || 1))} px</div>
+          </div>
+          <div class="property-row">
+            <div class="property-label">Позиция:</div>
+            <div class="property-value">${formatTo5(obj.left)} × ${formatTo5(obj.top)} px</div>
+          </div>
+    `;
+
+      if (props.airVolume !== undefined) {
+        html += `
+          <div class="property-row">
+            <div class="property-label">Объем воздуха:</div>
+            <div class="property-value">${formatTo5(props.airVolume)} м³/с</div>
+          </div>
+        `;
+      }
+
+      html += `</div>`;
+    });
+
+    html += `</div>`;
+  }
+
+  if (linesStartingHere.length > 0) {
+    html += `
+      <div class="property-group">
+        <h4>🟢 Линии, начинающиеся в точке:</h4>
+    `;
+
+    linesStartingHere.forEach((lineInfo, index) => {
+      const line = lineInfo.line;
+      normalizeLineProperties(line);
+      const props = line.properties || {};
+      const length = roundTo5(Math.sqrt(Math.pow(line.x2 - line.x1, 2) + Math.pow(line.y2 - line.y1, 2)));
+
+      html += `
+        <div class="property-group" style="margin-top: 10px; border-left: 3px solid #00b894; padding-left: 10px; background: #f8f9fa; padding: 10px; border-radius: 4px;">
+          <h5 style="margin: 5px 0;">${props.name || `Линия ${index + 1}`} (начало)</h5>
+          
+          <div class="property-row">
+            <div class="property-label">Длина:</div>
+            <div class="property-value">${formatTo5(length)} px</div>
+          </div>
+          <div class="property-row">
+            <div class="property-label">Координаты:</div>
+            <div class="property-value" style="font-size: 12px;">
+              (${formatTo5(line.x1)}, ${formatTo5(line.y1)}) → (${formatTo5(line.x2)}, ${formatTo5(line.y2)})
+            </div>
+          </div>
+          <div class="property-row">
+            <div class="property-label">Воздушное сопротивление:</div>
+            <div class="property-value"><strong>${formatTo5(props.airResistance || 0)}</strong></div>
+          </div>
+          <div class="property-row">
+            <div class="property-label">Объем воздуха линии:</div>
+            <div class="property-value"><strong>${formatTo5(props.airVolume || 0)} м³/с</strong></div>
+          </div>
+        </div>
+      `;
+    });
+
+    html += `</div>`;
+  }
+
+  if (linesEndingHere.length > 0) {
+    html += `
+      <div class="property-group">
+        <h4>🔴 Линии, заканчивающиеся в точке:</h4>
+    `;
+
+    linesEndingHere.forEach((lineInfo, index) => {
+      const line = lineInfo.line;
+      normalizeLineProperties(line);
+      const props = line.properties || {};
+      const length = roundTo5(Math.sqrt(Math.pow(line.x2 - line.x1, 2) + Math.pow(line.y2 - line.y1, 2)));
+
+      html += `
+        <div class="property-group" style="margin-top: 10px; border-left: 3px solid #e17055; padding-left: 10px; background: #f8f9fa; padding: 10px; border-radius: 4px;">
+          <h5 style="margin: 5px 0;">${props.name || `Линия ${index + 1}`} (конец)</h5>
+          
+          <div class="property-row">
+            <div class="property-label">Длина:</div>
+            <div class="property-value">${formatTo5(length)} px</div>
+          </div>
+          <div class="property-row">
+            <div class="property-label">Координаты:</div>
+            <div class="property-value" style="font-size: 12px;">
+              (${formatTo5(line.x1)}, ${formatTo5(line.y1)}) → (${formatTo5(line.x2)}, ${formatTo5(line.y2)})
+            </div>
+          </div>
+          <div class="property-row">
+            <div class="property-label">Воздушное сопротивление:</div>
+            <div class="property-value"><strong>${formatTo5(props.airResistance || 0)}</strong></div>
+          </div>
+          <div class="property-row">
+            <div class="property-label">Объем воздуха линии:</div>
+            <div class="property-value"><strong>${formatTo5(props.airVolume || 0)} м³/с</strong></div>
+          </div>
+        </div>
+      `;
+    });
+
+    html += `</div>`;
+  }
+
+  // Кнопки действий
+  html += `
+    <div class="property-group" style="margin-top: 20px;">
+      <h4>🚀 Действия:</h4>
+      <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+        <button onclick="zoomToPoint(${pointIndex})" class="btn-small">
+          🔍 Приблизить
+        </button>
+        <button onclick="selectObjectsAtPoint(${pointIndex})" class="btn-small">
+          📌 Выбрать объекты
+        </button>
+        <button onclick="deleteIntersectionPoint(${pointIndex})" class="btn-small danger">
+          🗑️ Удалить точку
+        </button>
+      </div>
+    </div>
+  `;
+
+  document.getElementById('intersectionPointInfo').innerHTML = html;
+  document.getElementById('intersectionPointModal').style.display = 'flex';
+}
+
+// ==================== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ДЛЯ МОДАЛЬНОГО ОКНА ====================
+// Добавьте эти функции в глобальную область видимости
+window.zoomToPoint = function (pointIndex) {
+  const pointData = intersectionPoints[pointIndex];
+  if (!pointData) return;
+
+  const zoomLevel = 2;
+  canvas.setZoom(zoomLevel);
+  const centerX = roundTo5(pointData.x - canvas.width / (2 * zoomLevel));
+  const centerY = roundTo5(pointData.y - canvas.height / (2 * zoomLevel));
+  canvas.absolutePan({x: -centerX, y: -centerY});
+
+  showNotification('Приближено к точке', 'info');
+  closeIntersectionPointModal();
+};
+
+window.selectObjectsAtPoint = function (pointIndex) {
+  const pointData = intersectionPoints[pointIndex];
+  if (!pointData) return;
+
+  const allObjects = canvas.getObjects();
+  const objectsToSelect = [];
+
+  allObjects.forEach(obj => {
+    if (obj.type === 'line') {
+      const startDist = roundTo5(Math.sqrt(Math.pow(obj.x1 - pointData.x, 2) + Math.pow(obj.y1 - pointData.y, 2)));
+      const endDist = roundTo5(Math.sqrt(Math.pow(obj.x2 - pointData.x, 2) + Math.pow(obj.y2 - pointData.y, 2)));
+      if (startDist < 0.00001 || endDist < 0.00001) {
+        objectsToSelect.push(obj);
+      }
+    } else if (obj.type === 'image' || obj.type === 'rect' || obj.type === 'circle') {
+      const objRect = getObjectRect(obj);
+      if (pointData.x >= objRect.left && pointData.x <= objRect.right &&
+        pointData.y >= objRect.top && pointData.y <= objRect.bottom) {
+        objectsToSelect.push(obj);
+      }
+    }
+  });
+
+  if (objectsToSelect.length > 0) {
+    const selection = new fabric.ActiveSelection(objectsToSelect, {
+      canvas: canvas
+    });
+    canvas.setActiveObject(selection);
+    canvas.renderAll();
+    showNotification(`Выбрано ${objectsToSelect.length} объектов`, 'success');
+  } else {
+    showNotification('Объектов не найдено', 'info');
+  }
+
+  closeIntersectionPointModal();
+};
+
+window.deleteIntersectionPoint = function (pointIndex) {
+  if (!confirm('Удалить эту точку пересечения?')) return;
+
+  const visual = intersectionVisuals[pointIndex];
+  if (visual) {
+    canvas.remove(visual.circle);
+    canvas.remove(visual.text);
+  }
+
+  intersectionPoints.splice(pointIndex, 1);
+  intersectionVisuals.splice(pointIndex, 1);
+
+  // Обновляем индексы оставшихся точек
+  intersectionVisuals.forEach((visual, idx) => {
+    if (visual.circle) {
+      visual.circle.set('pointIndex', idx);
+      visual.text.set('text', (idx + 1).toString());
+    }
+  });
+
+  canvas.renderAll();
+  closeIntersectionPointModal();
+  showNotification('Точка пересечения удалена', 'info');
+};
+
+window.selectObjectsAtPoint = function (pointIndex) {
+  const pointData = intersectionPoints[pointIndex];
+  if (!pointData) return;
+
+  const allObjects = canvas.getObjects();
+  const objectsToSelect = [];
+
+  allObjects.forEach(obj => {
+    if (obj.type === 'line') {
+      const startDist = roundTo5(Math.sqrt(Math.pow(obj.x1 - pointData.x, 2) + Math.pow(obj.y1 - pointData.y, 2)));
+      const endDist = roundTo5(Math.sqrt(Math.pow(obj.x2 - pointData.x, 2) + Math.pow(obj.y2 - pointData.y, 2)));
+      if (startDist < 0.00001 || endDist < 0.00001) {
+        objectsToSelect.push(obj);
+      }
+    } else if (obj.type === 'image' || obj.type === 'rect' || obj.type === 'circle') {
+      const objRect = getObjectRect(obj);
+      if (pointData.x >= objRect.left && pointData.x <= objRect.right &&
+        pointData.y >= objRect.top && pointData.y <= objRect.bottom) {
+        objectsToSelect.push(obj);
+      }
+    }
+  });
+
+  if (objectsToSelect.length > 0) {
+    const selection = new fabric.ActiveSelection(objectsToSelect, {
+      canvas: canvas
+    });
+    canvas.setActiveObject(selection);
+    canvas.renderAll();
+    showNotification(`Выбрано ${objectsToSelect.length} объектов`, 'success');
+  } else {
+    showNotification('Объектов не найдено', 'info');
+  }
+
+  closeIntersectionPointModal();
+};
+
+window.deleteIntersectionPoint = function (pointIndex) {
+  if (!confirm('Удалить эту точку пересечения?')) return;
+
+  const visual = intersectionVisuals[pointIndex];
+  if (visual) {
+    canvas.remove(visual.circle);
+    canvas.remove(visual.text);
+  }
+
+  intersectionPoints.splice(pointIndex, 1);
+  intersectionVisuals.splice(pointIndex, 1);
+
+  // Обновляем индексы оставшихся точек
+  intersectionVisuals.forEach((visual, idx) => {
+    if (visual.circle) {
+      visual.circle.set('pointIndex', idx);
+      visual.text.set('text', (idx + 1).toString());
+    }
+  });
+
+  canvas.renderAll();
+  closeIntersectionPointModal();
+  showNotification('Точка пересечения удалена', 'info');
+};
 
 // ==================== ПАНЕЛЬ СВОЙСТВ ====================
 function updatePropertiesPanel() {
@@ -1604,11 +2197,6 @@ function addNewImage() {
   updateImageLibrary();
   closeAddImageModal();
   showNotification(`Изображение "${name}" добавлено!`, 'success');
-}
-
-function showIntersectionPointInfo(pointIndex) {
-  // Реализация функции показа информации о точке
-  // (оставлена для краткости, можно добавить по аналогии с исходным кодом)
 }
 
 function closeIntersectionPointModal() {
