@@ -69,14 +69,17 @@ h1 {
   display: block;
 }
 
-#tools, .control-buttons, .image-library #imageLibraryGrid {
+#tools,
+.control-buttons,
+.image-library #imageLibraryGrid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
   gap: 8px;
   margin-bottom: 20px;
 }
 
-#tools button, .control-buttons button {
+#tools button,
+.control-buttons button {
   background: white;
   border: 1px solid #dee2e6;
   border-radius: 6px;
@@ -651,6 +654,7 @@ h1 {
     transform: translateY(-20px);
     opacity: 0;
   }
+
   to {
     transform: translateY(0);
     opacity: 1;
@@ -936,7 +940,8 @@ h1 {
   gap: 4px;
 }
 
-.object-item, .line-item {
+.object-item,
+.line-item {
   background: #f8f9fa;
   border-radius: 8px;
   padding: 15px;
@@ -1019,7 +1024,8 @@ h1 {
   border: 1px solid #ddd;
   border-radius: 8px;
   background: #fff;
-  min-height: 700px; /* Минимальная высота */
+  min-height: 700px;
+  /* Минимальная высота */
 }
 
 #canvas-wrapper {
@@ -1130,7 +1136,7 @@ h1 {
   background-color: white;
   border-radius: 8px;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
-  max-width: 90%;
+  /* max-width: 90%; */
   max-height: 90vh;
   overflow-y: auto;
 }
