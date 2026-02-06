@@ -30,967 +30,6 @@ let currentEditingObject = null;
 let currentEditingObjectType = null;
 let isCalculatingAirVolumes = false;
 
-// Вставьте это в самый верх вашего скрипта перед инициализацией canvas
-try {
-  const contextProto = CanvasRenderingContext2D.prototype;
-  const descriptor = Object.getOwnPropertyDescriptor(contextProto, 'textBaseline');
-  const originalSetter = descriptor.set;
-
-  Object.defineProperty(contextProto, 'textBaseline', {
-    set: function (value) {
-      // Если Fabric пытается пропихнуть 'alphabetical', мы меняем его на валидное
-      const correctedValue = (value === 'alphabetical') ? 'alphabetic' : value;
-      return originalSetter.call(this, correctedValue);
-    },
-    get: descriptor.get,
-    configurable: true
-  });
-} catch (e) {
-  console.error("Не удалось применить фикс для Chrome:", e);
-}
-
-
-// ==================== ИНИЦИАЛИЗАЦИЯ ====================
-document.addEventListener('DOMContentLoaded', function () {
-  initializeCanvas();
-  updateImageLibrary();
-  updateStatus();
-  initializeModals();
-  setupKeyboardShortcuts();
-  setupAltKeyTracking();
-
-  // Добавляем обработчик для кнопки расчета воздуха
-  document.getElementById('calculateAirBtn')?.addEventListener('click', function () {
-    if (!isCalculatingAirVolumes) {
-      calculateAirVolumesForAllLines(true);
-    }
-  });
-
-  // Обработчик изменения размера окна
-  window.addEventListener('resize', handleResize);
-
-  console.log('Редактор технических чертежей загружен!');
-});
-
-// Подавление ошибки CanvasTextBaseline
-(function () {
-  const originalError = console.error;
-  console.error = function (...args) {
-    if (args[0] && typeof args[0] === 'string' &&
-      args[0].includes('alphabetical') &&
-      args[0].includes('CanvasTextBaseline')) {
-      return;
-    }
-    originalError.apply(console, args);
-  };
-})();
-
-function initializeCanvas() {
-  canvas = new fabric.Canvas('fabric-canvas', {
-    backgroundColor: '#ffffff',
-    preserveObjectStacking: true,
-    selection: true,
-    selectionColor: 'rgba(74, 0, 224, 0.3)',
-    selectionBorderColor: '#4A00E0',
-    selectionLineWidth: 2,
-    renderOnAddRemove: false
-  });
-
-  updateCanvasSize();
-  drawGrid(APP_CONFIG.GRID_SIZE);
-  setupCanvasEvents();
-}
-
-function updateCanvasSize() {
-  if (!canvas) return;
-  const wrapper = document.getElementById('canvas-wrapper');
-  if (!wrapper) return;
-
-  const width = wrapper.clientWidth;
-  const height = wrapper.clientHeight;
-
-  canvas.setDimensions({width, height});
-
-  if (gridVisible) {
-    drawGrid(APP_CONFIG.GRID_SIZE);
-  }
-  canvas.renderAll();
-}
-
-function handleResize() {
-  updateCanvasSize();
-}
-
-// ==================== УТИЛИТЫ ====================
-function roundTo5(value) {
-  if (value === null || value === undefined) return value;
-  return Math.round((value + Number.EPSILON) * 100000) / 100000;
-}
-
-function formatTo5(value) {
-  if (value === null || value === undefined) return '0.00000';
-  return roundTo5(value).toFixed(5);
-}
-
-// ==================== ФУНКЦИИ ДЛЯ ОТОБРАЖЕНИЯ ОБЪЕМА ВОЗДУХА ====================
-function createOrUpdateAirVolumeText(line) {
-  if (line.airVolumeText) {
-    try {
-      canvas.remove(line.airVolumeText);
-    } catch (e) {
-      console.warn('Error removing air volume text:', e);
-    }
-    line.airVolumeText = null;
-  }
-
-  if (!line.properties || line.properties.airVolume === undefined || line.properties.airVolume === null) return;
-
-  try {
-    const midX = (line.x1 + line.x2) / 2;
-    const midY = (line.y1 + line.y2) / 2;
-    const angle = Math.atan2(line.y2 - line.y1, line.x2 - line.x1);
-    const degrees = angle * (180 / Math.PI);
-    const offset = 20;
-    const offsetX = Math.sin(angle) * offset;
-    const offsetY = -Math.cos(angle) * offset;
-
-    const textOptions = {
-      left: midX + offsetX,
-      top: midY + offsetY,
-      fontSize: 12,
-      fontFamily: 'Arial, sans-serif',
-      fill: line.stroke || APP_CONFIG.DEFAULT_LINE_COLOR,
-      fontWeight: 'bold',
-      textBackgroundColor: 'rgba(255, 255, 255, 0.8)',
-      padding: 3,
-      selectable: false,
-      evented: false,
-      originX: 'center',
-      originY: 'center',
-      angle: degrees,
-      lockMovementX: true,
-      lockMovementY: true,
-      lockRotation: true,
-      lockScalingX: true,
-      lockScalingY: true,
-      hasControls: false,
-      hasBorders: false
-    };
-
-    const airVolumeText = new fabric.Text(`${line.properties.airVolume} м³/с`, textOptions);
-    line.airVolumeText = airVolumeText;
-    canvas.add(airVolumeText);
-    airVolumeText.bringToFront();
-    return airVolumeText;
-  } catch (error) {
-    console.error('Error creating air volume text:', error);
-    return null;
-  }
-}
-
-function updateAllAirVolumeTexts() {
-  const lines = canvas.getObjects().filter(obj => obj.type === 'line' && obj.id !== 'grid-line');
-  lines.forEach(line => createOrUpdateAirVolumeText(line));
-  canvas.renderAll();
-}
-
-function removeAirVolumeText(line) {
-  if (line.airVolumeText) {
-    canvas.remove(line.airVolumeText);
-    line.airVolumeText = null;
-  }
-}
-
-// ==================== РАСЧЕТНЫЕ ФУНКЦИИ ====================
-function calculateLinePerimeter(crossSectionalArea) {
-  return roundTo5(3.8 * Math.sqrt(crossSectionalArea));
-}
-
-function calculateAirResistance(roughnessCoefficient, perimeter, passageLength, crossSectionalArea) {
-  if (crossSectionalArea === 0) return 0;
-  return roundTo5((roughnessCoefficient * perimeter * passageLength) / crossSectionalArea);
-}
-
-function calculateAllLineProperties(line) {
-  if (!line.properties) return;
-  const props = line.properties;
-
-  if (props.crossSectionalArea !== undefined) {
-    props.perimeter = calculateLinePerimeter(props.crossSectionalArea);
-  }
-
-  if (props.roughnessCoefficient !== undefined &&
-    props.perimeter !== undefined &&
-    props.passageLength !== undefined &&
-    props.crossSectionalArea !== undefined) {
-    props.airResistance = calculateAirResistance(
-      props.roughnessCoefficient,
-      props.perimeter,
-      props.passageLength,
-      props.crossSectionalArea
-    );
-  }
-  return props;
-}
-
-function normalizeLineProperties(line) {
-  if (!line.properties) return;
-  const props = line.properties;
-
-  if (props.L !== undefined) {
-    props.passageLength = roundTo5(props.L);
-    delete props.L;
-  }
-  if (props.K !== undefined) {
-    props.crossSectionalArea = roundTo5(props.K);
-    delete props.K;
-  }
-  if (props.I !== undefined) {
-    props.roughnessCoefficient = roundTo5(props.I);
-    delete props.I;
-  }
-
-  calculateAllLineProperties(line);
-  line.set('properties', props);
-}
-
-// ==================== УЛУЧШЕННАЯ ФУНКЦИЯ РАСЧЕТА ОБЪЕМА ВОЗДУХА ДЛЯ ЛИНИЙ ====================
-function calculateAirVolumesForAllLines(isManual = false) {
-  if (isCalculatingAirVolumes) {
-    console.log('Расчет уже выполняется, пропускаем вызов');
-    return false;
-  }
-
-  isCalculatingAirVolumes = true;
-
-  try {
-    if (isManual) {
-      showNotification('Начинаю расчет объемов воздуха...', 'info', 2000);
-    }
-
-    console.log('=== calculateAirVolumesForAllLines started ===');
-    const lines = canvas.getObjects().filter(obj => obj.type === 'line' && obj.id !== 'grid-line');
-    const images = canvas.getObjects().filter(obj => obj.type === 'image' && obj.properties);
-
-    console.log(`Lines found: ${lines.length}, Images found: ${images.length}`);
-
-    // Создаем карту точек соединения
-    const connectionPointsMap = new Map();
-
-    // 1. Собираем все точки соединения
-    lines.forEach(line => {
-      if (!line.properties) line.properties = {};
-
-      const startKey = `${roundTo5(line.x1)}_${roundTo5(line.y1)}`;
-      const endKey = `${roundTo5(line.x2)}_${roundTo5(line.y2)}`;
-
-      // Инициализируем запись для начальной точки
-      if (!connectionPointsMap.has(startKey)) {
-        connectionPointsMap.set(startKey, {
-          x: roundTo5(line.x1),
-          y: roundTo5(line.y1),
-          connectedLines: [],
-          connectedObjects: [],
-          isSource: false,
-          airVolume: null
-        });
-      }
-
-      // Инициализируем запись для конечной точки
-      if (!connectionPointsMap.has(endKey)) {
-        connectionPointsMap.set(endKey, {
-          x: roundTo5(line.x2),
-          y: roundTo5(line.y2),
-          connectedLines: [],
-          connectedObjects: [],
-          isSource: false,
-          airVolume: null
-        });
-      }
-
-      // Добавляем линию в точки соединения
-      const startPoint = connectionPointsMap.get(startKey);
-      const endPoint = connectionPointsMap.get(endKey);
-
-      startPoint.connectedLines.push({
-        line: line,
-        type: 'start', // Линия начинается в этой точке
-        index: startPoint.connectedLines.length
-      });
-
-      endPoint.connectedLines.push({
-        line: line,
-        type: 'end', // Линия заканчивается в этой точке
-        index: endPoint.connectedLines.length
-      });
-    });
-
-    // 2. Добавляем объекты в точки соединения
-    images.forEach(image => {
-      if (!image.properties) return;
-      const center = getObjectCenter(image);
-      const centerKey = `${roundTo5(center.x)}_${roundTo5(center.y)}`;
-
-      // Ищем ближайшую точку соединения
-      let closestPoint = null;
-      let minDistance = Infinity;
-
-      for (const [key, pointData] of connectionPointsMap.entries()) {
-        const distance = roundTo5(Math.sqrt(
-          Math.pow(pointData.x - center.x, 2) + Math.pow(pointData.y - center.y, 2)
-        ));
-
-        // Проверяем, находится ли точка внутри объекта или рядом
-        const objRect = getObjectRect(image);
-        const isInside = pointData.x >= objRect.left && pointData.x <= objRect.right &&
-          pointData.y >= objRect.top && pointData.y <= objRect.bottom;
-
-        if (isInside || distance < 10) {
-          if (distance < minDistance) {
-            minDistance = distance;
-            closestPoint = pointData;
-          }
-        }
-      }
-
-      if (closestPoint) {
-        closestPoint.connectedObjects.push(image);
-
-        // Если у объекта задан объем воздуха, отмечаем точку как источник
-        if (image.properties.airVolume !== undefined && image.properties.airVolume !== null) {
-          closestPoint.isSource = true;
-          closestPoint.airVolume = roundTo5(image.properties.airVolume);
-        }
-      }
-    });
-
-    // 3. Определяем источники воздуха (точки, где линии начинаются от объектов)
-    lines.forEach(line => {
-      if (line.lineStartsFromObject && line.startObject) {
-        const startKey = `${roundTo5(line.x1)}_${roundTo5(line.y1)}`;
-        const pointData = connectionPointsMap.get(startKey);
-
-        if (pointData && line.startObject.properties && line.startObject.properties.airVolume !== undefined) {
-          pointData.isSource = true;
-          pointData.airVolume = roundTo5(line.startObject.properties.airVolume);
-        }
-      }
-    });
-
-    // 4. Расчет потоков воздуха (алгоритм обхода графа)
-    const processedPoints = new Set();
-    const linesToUpdate = new Set();
-
-    // Функция для распространения объема воздуха от источника
-    function propagateAirVolumeFromSource(startPoint) {
-      if (processedPoints.has(startPoint)) return;
-      processedPoints.add(startPoint);
-
-      // Если точка является источником, начинаем распространение
-      if (startPoint.isSource && startPoint.airVolume !== null) {
-        const queue = [{point: startPoint, airVolume: startPoint.airVolume}];
-
-        while (queue.length > 0) {
-          const current = queue.shift();
-
-          // Находим все линии, которые начинаются в этой точке
-          const startingLines = current.point.connectedLines.filter(conn => conn.type === 'start');
-
-          for (const conn of startingLines) {
-            const line = conn.line;
-
-            // Обновляем объем воздуха в линии
-            if (!line.properties.airVolume || Math.abs(line.properties.airVolume - current.airVolume) > 0.00001) {
-              line.properties.airVolume = roundTo5(current.airVolume);
-              linesToUpdate.add(line);
-            }
-
-            // Находим конечную точку этой линии
-            const endKey = `${roundTo5(line.x2)}_${roundTo5(line.y2)}`;
-            const endPoint = connectionPointsMap.get(endKey);
-
-            if (endPoint && !processedPoints.has(endPoint)) {
-              // Проверяем, является ли конечная точка разветвлением
-              const linesEndingHere = endPoint.connectedLines.filter(c => c.type === 'end');
-              const linesStartingHere = endPoint.connectedLines.filter(c => c.type === 'start');
-
-              // Если это разветвление (несколько линий начинаются), распределяем объем
-              if (linesStartingHere.length > 0) {
-                // Пока просто передаем тот же объем (можно добавить логику распределения)
-                endPoint.airVolume = roundTo5(current.airVolume);
-                endPoint.isSource = true;
-                queue.push({point: endPoint, airVolume: current.airVolume});
-              }
-            }
-          }
-        }
-      }
-    }
-
-    // 5. Запускаем распространение от всех источников
-    for (const [key, pointData] of connectionPointsMap.entries()) {
-      if (pointData.isSource) {
-        propagateAirVolumeFromSource(pointData);
-      }
-    }
-
-    // 6. Обрабатываем простые соединения (линия заканчивается, другая начинается)
-    for (const [key, pointData] of connectionPointsMap.entries()) {
-      if (processedPoints.has(pointData)) continue;
-
-      const linesEndingHere = pointData.connectedLines.filter(c => c.type === 'end');
-      const linesStartingHere = pointData.connectedLines.filter(c => c.type === 'start');
-
-      // Если в точке заканчивается 1 линия и начинается 1 или более линий
-      if (linesEndingHere.length === 1 && linesStartingHere.length >= 1) {
-        const endingLine = linesEndingHere[0].line;
-
-        if (endingLine.properties && endingLine.properties.airVolume !== undefined) {
-          // Передаем объем воздуха от заканчивающейся линии к начинающимся
-          pointData.airVolume = roundTo5(endingLine.properties.airVolume);
-
-          for (const conn of linesStartingHere) {
-            const startingLine = conn.line;
-
-            if (!startingLine.properties.airVolume ||
-              Math.abs(startingLine.properties.airVolume - pointData.airVolume) > 0.00001) {
-              startingLine.properties.airVolume = roundTo5(pointData.airVolume);
-              linesToUpdate.add(startingLine);
-            }
-          }
-
-          processedPoints.add(pointData);
-        }
-      }
-    }
-
-    // 7. Обновляем линии и тексты
-    if (linesToUpdate.size > 0) {
-      linesToUpdate.forEach(line => {
-        try {
-          line.set('properties', line.properties);
-          createOrUpdateAirVolumeText(line);
-        } catch (err) {
-          console.warn('Error updating line:', err, line);
-        }
-      });
-
-      canvas.renderAll();
-      updatePropertiesPanel();
-
-      const updatedCount = linesToUpdate.size;
-      console.log(`=== calculateAirVolumesForAllLines completed: updated ${updatedCount} lines ===`);
-
-      if (isManual) {
-        showNotification(`Расчет завершен. Обновлено ${updatedCount} линий`, 'success');
-      }
-
-      return true;
-    } else {
-      console.log('=== calculateAirVolumesForAllLines completed, no updates ===');
-
-      if (isManual) {
-        showNotification('Расчет завершен. Изменений не требуется', 'info');
-      }
-
-      return false;
-    }
-  } catch (error) {
-    console.error('FATAL ERROR in calculateAirVolumesForAllLines:', error);
-
-    if (isManual) {
-      showNotification('Ошибка при расчете объемов воздуха: ' + error.message, 'error');
-    }
-
-    return false;
-  } finally {
-    isCalculatingAirVolumes = false;
-  }
-}
-
-// ==================== УПРАВЛЕНИЕ ОБЪЕКТАМИ ====================
-function getObjectCenter(obj) {
-  const width = roundTo5(obj.width * obj.scaleX);
-  const height = roundTo5(obj.height * obj.scaleY);
-  return {
-    x: roundTo5(obj.left),
-    y: roundTo5(obj.top),
-    width: width,
-    height: height
-  };
-}
-
-function getObjectRect(obj) {
-  const width = roundTo5(obj.width * obj.scaleX);
-  const height = roundTo5(obj.height * obj.scaleY);
-  return {
-    left: roundTo5(obj.left - width / 2),
-    right: roundTo5(obj.left + width / 2),
-    top: roundTo5(obj.top - height / 2),
-    bottom: roundTo5(obj.top + height / 2)
-  };
-}
-
-function findClosestPointOnLine(point, line) {
-  const x1 = line.x1, y1 = line.y1;
-  const x2 = line.x2, y2 = line.y2;
-  const A = roundTo5(point.x - x1);
-  const B = roundTo5(point.y - y1);
-  const C = roundTo5(x2 - x1);
-  const D = roundTo5(y2 - y1);
-  const dot = roundTo5(A * C + B * D);
-  const lenSq = roundTo5(C * C + D * D);
-  let param = -1;
-  if (lenSq !== 0) param = roundTo5(dot / lenSq);
-
-  let xx, yy;
-  if (param < 0) {
-    xx = x1;
-    yy = y1;
-  } else if (param > 1) {
-    xx = x2;
-    yy = y2;
-  } else {
-    xx = roundTo5(x1 + param * C);
-    yy = roundTo5(y1 + param * D);
-  }
-
-  return {x: roundTo5(xx), y: roundTo5(yy), param: param};
-}
-
-function findClosestPointOnObjectEdge(object, point) {
-  if (!object || !point) return null;
-  const objRect = getObjectRect(object);
-  const center = getObjectCenter(object);
-
-  if (object.type === 'image' || object.type === 'rect') {
-    const left = objRect.left, right = objRect.right, top = objRect.top,
-      bottom = objRect.bottom;
-    const isInside = point.x >= left && point.x <= right && point.y >= top && point.y <= bottom;
-
-    if (isInside) {
-      const distToLeft = roundTo5(Math.abs(point.x - left));
-      const distToRight = roundTo5(Math.abs(point.x - right));
-      const distToTop = roundTo5(Math.abs(point.y - top));
-      const distToBottom = roundTo5(Math.abs(point.y - bottom));
-      const minDist = roundTo5(Math.min(distToLeft, distToRight, distToTop, distToBottom));
-
-      if (minDist === distToLeft) return {
-        x: roundTo5(left),
-        y: roundTo5(point.y)
-      };
-      else if (minDist === distToRight) return {
-        x: roundTo5(right),
-        y: roundTo5(point.y)
-      };
-      else if (minDist === distToTop) return {
-        x: roundTo5(point.x),
-        y: roundTo5(top)
-      };
-      else return {x: roundTo5(point.x), y: roundTo5(bottom)};
-    } else {
-      let closestX = roundTo5(Math.max(left, Math.min(point.x, right)));
-      let closestY = roundTo5(Math.max(top, Math.min(point.y, bottom)));
-      const distToLeft = roundTo5(Math.abs(point.x - left));
-      const distToRight = roundTo5(Math.abs(point.x - right));
-      const distToTop = roundTo5(Math.abs(point.y - top));
-      const distToBottom = roundTo5(Math.abs(point.y - bottom));
-      const minDist = roundTo5(Math.min(distToLeft, distToRight, distToTop, distToBottom));
-
-      if (minDist === distToLeft || minDist === distToRight) closestY = roundTo5(point.y);
-      else closestX = roundTo5(point.x);
-
-      closestX = roundTo5(Math.max(left, Math.min(closestX, right)));
-      closestY = roundTo5(Math.max(top, Math.min(closestY, bottom)));
-      return {x: closestX, y: closestY};
-    }
-  }
-
-  if (object.type === 'circle') {
-    const radius = roundTo5(object.radius * object.scaleX);
-    const dx = roundTo5(point.x - center.x);
-    const dy = roundTo5(point.y - center.y);
-    const distance = roundTo5(Math.sqrt(dx * dx + dy * dy));
-    if (distance === 0) return {
-      x: roundTo5(center.x + radius),
-      y: roundTo5(center.y)
-    };
-    const scale = roundTo5(radius / distance);
-    return {
-      x: roundTo5(center.x + dx * scale),
-      y: roundTo5(center.y + dy * scale)
-    };
-  }
-
-  return {
-    x: roundTo5(Math.max(objRect.left, Math.min(point.x, objRect.right))),
-    y: roundTo5(Math.max(objRect.top, Math.min(point.y, objRect.bottom)))
-  };
-}
-
-// ==================== СОБЫТИЯ КАНВАСА ====================
-function setupCanvasEvents() {
-  if (!canvas) return;
-  canvas.on('mouse:down', handleCanvasMouseDown);
-  canvas.on('mouse:move', handleCanvasMouseMove);
-  canvas.on('mouse:out', handleCanvasMouseOut);
-  canvas.on('mouse:dblclick', handleCanvasDoubleClick);
-  canvas.on('selection:created', updatePropertiesPanel);
-  canvas.on('selection:updated', updatePropertiesPanel);
-  canvas.on('selection:cleared', updatePropertiesPanel);
-  canvas.on('object:added', handleObjectAdded);
-  canvas.on('object:modified', handleObjectModified);
-  canvas.on('object:removed', handleObjectRemoved);
-}
-
-function handleCanvasMouseDown(options) {
-  const pointer = canvas.getPointer(options.e);
-  if (options.e.shiftKey && currentImageData) {
-    addImageAtPosition(pointer.x, pointer.y);
-    return;
-  }
-  if (isDrawingLine) {
-    handleLineDrawing(options, pointer);
-    return;
-  }
-  if (options.e.button === 2) {
-    const activeObject = canvas.getActiveObject();
-    if (activeObject) showContextMenu(pointer.x, pointer.y);
-    options.e.preventDefault();
-  }
-}
-
-function handleCanvasMouseMove(options) {
-  const pointer = canvas.getPointer(options.e);
-  if (isDrawingLine && lineStartPoint && previewLine) {
-    const snappedX = roundTo5(snapToGrid(pointer.x, APP_CONFIG.GRID_SIZE));
-    const snappedY = roundTo5(snapToGrid(pointer.y, APP_CONFIG.GRID_SIZE));
-    previewLine.set({x2: snappedX, y2: snappedY});
-    previewLine.setCoords();
-    canvas.requestRenderAll();
-
-    if (altKeyPressed) {
-      canvas.forEachObject(obj => {
-        if (obj.type !== 'line' && obj.id !== 'grid-group' && obj.id !== 'grid-line') {
-          obj.set('stroke', '#4A00E0');
-          obj.set('strokeWidth', 2);
-        }
-      });
-      canvas.renderAll();
-    }
-  }
-}
-
-function handleCanvasMouseOut() {
-  if (altKeyPressed && isDrawingLine) {
-    canvas.forEachObject(obj => {
-      if (obj.type !== 'line' && obj.id !== 'grid-group' && obj.id !== 'grid-line') {
-        obj.set('stroke', null);
-        obj.set('strokeWidth', 0);
-      }
-    });
-    canvas.renderAll();
-  }
-}
-
-function handleCanvasDoubleClick(options) {
-  if (options.target) {
-    canvas.setActiveObject(options.target);
-    showObjectPropertiesModal();
-  }
-}
-
-function handleObjectAdded(e) {
-  if (e.target && e.target.id !== 'intersection-point' && e.target.id !== 'intersection-point-label' && e.target.id !== 'air-volume-text') {
-    setTimeout(() => {
-      bringIntersectionPointsToFront();
-      updateAllAirVolumeTexts();
-    }, 10);
-  }
-}
-
-function handleObjectModified(e) {
-  if (e.target && e.target.type === 'line' && e.target.properties) {
-    calculateAllLineProperties(e.target);
-    createOrUpdateAirVolumeText(e.target);
-  }
-}
-
-function handleObjectRemoved(e) {
-  if (e.target && e.target.type === 'line' && e.target.airVolumeText) {
-    removeAirVolumeText(e.target);
-  }
-}
-
-function handleLineDrawing(options, pointer) {
-  let snappedX, snappedY;
-  let startPointFromObject = null;
-
-  if (altKeyPressed && options.target) {
-    const targetObject = options.target;
-    const objectEdgePoint = findClosestPointOnObjectEdge(targetObject, pointer);
-    if (objectEdgePoint) {
-      startPointFromObject = {
-        x: roundTo5(objectEdgePoint.x),
-        y: roundTo5(objectEdgePoint.y),
-        object: targetObject,
-        edgePoint: true
-      };
-      snappedX = roundTo5(objectEdgePoint.x);
-      snappedY = roundTo5(objectEdgePoint.y);
-    }
-  }
-
-  if (isContinuousLineMode && lastLineEndPoint && !startPointFromObject) {
-    const distanceToLastPoint = roundTo5(Math.sqrt(
-      Math.pow(pointer.x - lastLineEndPoint.x, 2) + Math.pow(pointer.y - lastLineEndPoint.y, 2)
-    ));
-    if (distanceToLastPoint < APP_CONFIG.SNAP_RADIUS) {
-      snappedX = roundTo5(lastLineEndPoint.x);
-      snappedY = roundTo5(lastLineEndPoint.y);
-    } else {
-      snappedX = roundTo5(snapToGrid(pointer.x, APP_CONFIG.GRID_SIZE));
-      snappedY = roundTo5(snapToGrid(pointer.y, APP_CONFIG.GRID_SIZE));
-    }
-  } else if (!startPointFromObject) {
-    snappedX = roundTo5(snapToGrid(pointer.x, APP_CONFIG.GRID_SIZE));
-    snappedY = roundTo5(snapToGrid(pointer.y, APP_CONFIG.GRID_SIZE));
-  }
-
-  if (!lineStartPoint) {
-    let initialAirVolume = 0;
-    if (startPointFromObject && startPointFromObject.object && startPointFromObject.object.properties) {
-      initialAirVolume = roundTo5(startPointFromObject.object.properties.airVolume || 0);
-    }
-
-    lineStartPoint = {x: snappedX, y: snappedY, ...startPointFromObject};
-    previewLine = new fabric.Line([lineStartPoint.x, lineStartPoint.y, snappedX, snappedY], {
-      stroke: APP_CONFIG.DEFAULT_LINE_COLOR,
-      strokeWidth: 2,
-      strokeDashArray: [5, 5],
-      selectable: false,
-      evented: false
-    });
-
-    if (startPointFromObject) {
-      previewLine.lineStartsFromObject = true;
-      previewLine.startObject = startPointFromObject.object;
-      previewLine.initialAirVolume = initialAirVolume;
-    }
-    canvas.add(previewLine);
-  } else {
-    const length = roundTo5(Math.sqrt(Math.pow(snappedX - lineStartPoint.x, 2) + Math.pow(snappedY - lineStartPoint.y, 2)));
-    const passageLength = roundTo5(parseFloat(document.getElementById('propertyPassageLength')?.value) || 0.5);
-    const roughnessCoefficient = roundTo5(parseFloat(document.getElementById('propertyRoughnessCoefficient')?.value) || 0.015);
-    const crossSectionalArea = roundTo5(parseFloat(document.getElementById('propertyCrossSectionalArea')?.value) || 10);
-    const perimeter = calculateLinePerimeter(crossSectionalArea);
-    const airResistance = calculateAirResistance(roughnessCoefficient, perimeter, passageLength, crossSectionalArea);
-    let airVolume = roundTo5(parseFloat(document.getElementById('propertyAirVolume')?.value) || 0);
-
-    // КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Безопасная проверка вложенных свойств
-    if (lineStartPoint?.object?.properties?.airVolume !== undefined &&
-      lineStartPoint.object.properties.airVolume !== null) {
-      airVolume = lineStartPoint.object.properties.airVolume;
-    }
-
-    const lineId = 'line_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
-    const finalLine = new fabric.Line([lineStartPoint.x, lineStartPoint.y, snappedX, snappedY], {
-      stroke: document.getElementById('propertyColor')?.value || APP_CONFIG.DEFAULT_LINE_COLOR,
-      strokeWidth: parseInt(document.getElementById('propertyWidth')?.value || APP_CONFIG.DEFAULT_LINE_WIDTH),
-      fill: false,
-      strokeLineCap: 'round',
-      hasControls: true,
-      hasBorders: true,
-      lockRotation: false,
-      id: lineId,
-      properties: {
-        name: document.getElementById('propertyName')?.value || `Линия`,
-        passageLength: passageLength,
-        roughnessCoefficient: roughnessCoefficient,
-        crossSectionalArea: crossSectionalArea,
-        W: roundTo5(parseFloat(document.getElementById('propertyW')?.value) || 1.0),
-        airResistance: airResistance,
-        airVolume: airVolume,
-        perimeter: perimeter,
-        length: length,
-        startPoint: lineStartPoint,
-        endPoint: {x: snappedX, y: snappedY}
-      }
-    });
-
-    if (lineStartPoint.object) {
-      finalLine.lineStartsFromObject = true;
-      finalLine.startObject = lineStartPoint.object;
-      finalLine.properties.startsFromObject = {
-        objectId: lineStartPoint.object.id || lineStartPoint.object._id,
-        objectType: lineStartPoint.object.type,
-        objectName: lineStartPoint.object.properties?.name || 'Объект',
-        edgePoint: lineStartPoint.edgePoint || false
-      };
-      setTimeout(() => createIntersectionPointForLineStart(finalLine), 10);
-    }
-
-    saveToUndoStack();
-    canvas.add(finalLine);
-    createOrUpdateAirVolumeText(finalLine);
-    canvas.setActiveObject(finalLine);
-    updatePropertiesPanel();
-
-    setTimeout(() => {
-      try {
-        calculateAirVolumesForAllLines();
-      } catch (err) {
-        console.error('Error in delayed air volume calculation:', err);
-      }
-    }, 50); // Увеличьте задержку для стабильности
-
-    lastLineEndPoint = {x: snappedX, y: snappedY};
-
-    if (isContinuousLineMode) {
-      // Сохраняем привязку к объекту, если линия начиналась от него
-      const hasObject = lineStartPoint?.object ? {object: lineStartPoint.object} : {};
-      lineStartPoint = {x: snappedX, y: snappedY, ...hasObject};
-      if (previewLine) {
-        previewLine.set({
-          x1: lineStartPoint.x,
-          y1: lineStartPoint.y,
-          x2: snappedX,
-          y2: snappedY
-        });
-      }
-    } else deactivateAllModes();
-  }
-}
-
-// ==================== УПРАВЛЕНИЕ РЕЖИМАМИ ====================
-function activateLineDrawing() {
-  deactivateAllModes();
-  isDrawingLine = true;
-  canvas.defaultCursor = 'crosshair';
-  canvas.selection = false;
-  canvas.forEachObject(obj => obj.selectable = false);
-
-  const modeText = isContinuousLineMode
-    ? 'Режим рисования линии (непрерывный). Кликните для начала, затем для конца.'
-    : 'Режим рисования линии. Кликните для начала, затем для конца.';
-  const altHint = ' Удерживайте Alt для привязки к краям объектов.';
-  showNotification(modeText + altHint + ' ESC для отмены.', 'info');
-}
-
-function deactivateAllModes() {
-  if (isDrawingLine) {
-    isDrawingLine = false;
-    if (previewLine) {
-      canvas.remove(previewLine);
-      previewLine = null;
-    }
-    lineStartPoint = null;
-    lastLineEndPoint = null;
-  }
-  if (currentImageData) currentImageData = null;
-
-  canvas.defaultCursor = 'default';
-  canvas.selection = true;
-  canvas.forEachObject(obj => {
-    if (obj.id !== 'grid-group') obj.selectable = true;
-  });
-  updateStatus();
-}
-
-function toggleContinuousMode() {
-  isContinuousLineMode = !isContinuousLineMode;
-  const btn = document.getElementById('continuousModeBtn');
-  if (isContinuousLineMode) {
-    btn.innerHTML = '<span>🔗</span> Непрерывный (ВКЛ)';
-    showNotification('Непрерывный режим включен', 'success');
-  } else {
-    btn.innerHTML = '<span>🔗</span> Непрерывный (ВЫКЛ)';
-    showNotification('Непрерывный режим выключен', 'info');
-  }
-}
-
-function toggleAutoSplitMode() {
-  autoSplitMode = !autoSplitMode;
-  const btn = document.getElementById('autoSplitBtn');
-  if (autoSplitMode) {
-    btn.innerHTML = '<span>⚡</span> Авторазбивка (ВКЛ)';
-    showNotification('Автоматическое разделение линий включено', 'success');
-  } else {
-    btn.innerHTML = '<span>⚡</span> Авторазбивка (ВЫКЛ)';
-    showNotification('Автоматическое разделение линий отключено', 'info');
-  }
-}
-
-function toggleLineSplitMode() {
-  if (lineSplitMode === 'AUTO') {
-    lineSplitMode = 'MANUAL';
-    document.getElementById('lineSplitModeBtn').innerHTML = '<span>🎯</span> Режим: РУЧНОЙ';
-    showNotification('Режим разбиения: РУЧНОЙ', 'info');
-  } else {
-    lineSplitMode = 'AUTO';
-    document.getElementById('lineSplitModeBtn').innerHTML = '<span>🎯</span> Режим: АВТО';
-    showNotification('Режим разбиения: АВТО', 'info');
-  }
-}
-
-// ==================== СЕТКА ====================
-function drawGrid(gridSize = APP_CONFIG.GRID_SIZE) {
-  const oldGrid = canvas ? canvas.getObjects().filter(obj => obj.id === 'grid-group') : [];
-  oldGrid.forEach(obj => canvas.remove(obj));
-  if (!gridVisible || !canvas) return;
-
-  const width = canvas.width || 1200;
-  const height = canvas.height || 700;
-  const gridLines = [];
-
-  for (let x = 0; x <= width; x += gridSize) {
-    gridLines.push(new fabric.Line([x, 0, x, height], {
-      stroke: 'rgba(224, 224, 224, 0.5)',
-      strokeWidth: 1,
-      selectable: false,
-      evented: false,
-      id: 'grid-line'
-    }));
-  }
-
-  for (let y = 0; y <= height; y += gridSize) {
-    gridLines.push(new fabric.Line([0, y, width, y], {
-      stroke: 'rgba(224, 224, 224, 0.5)',
-      strokeWidth: 1,
-      selectable: false,
-      evented: false,
-      id: 'grid-line'
-    }));
-  }
-
-  const gridGroup = new fabric.Group(gridLines, {
-    selectable: false,
-    evented: false,
-    id: 'grid-group'
-  });
-  canvas.add(gridGroup);
-  canvas.sendToBack(gridGroup);
-}
-
-function toggleGrid() {
-  gridVisible = !gridVisible;
-  const btn = document.getElementById('gridToggleBtn');
-  if (gridVisible) {
-    btn.innerHTML = '<span>🔲</span> Сетка (ВКЛ)';
-    drawGrid(APP_CONFIG.GRID_SIZE);
-    showNotification('Сетка включена', 'success');
-  } else {
-    btn.innerHTML = '<span>🔲</span> Сетка (ВЫКЛ)';
-    drawGrid(APP_CONFIG.GRID_SIZE);
-    showNotification('Сетка отключена', 'info');
-  }
-  canvas.renderAll();
-}
-
-function snapToGrid(value, gridSize = APP_CONFIG.GRID_SIZE) {
-  return roundTo5(Math.round(value / gridSize) * gridSize);
-}
-
 // ==================== ИЗОБРАЖЕНИЯ ====================
 const defaultImages = [
   {
@@ -1165,6 +204,719 @@ const defaultImages = [
 
 let allImages = [...defaultImages];
 
+// Вставьте это в самый верх вашего скрипта перед инициализацией canvas
+try {
+  const contextProto = CanvasRenderingContext2D.prototype;
+  const descriptor = Object.getOwnPropertyDescriptor(contextProto, 'textBaseline');
+  const originalSetter = descriptor.set;
+
+  Object.defineProperty(contextProto, 'textBaseline', {
+    set: function (value) {
+      // Если Fabric пытается пропихнуть 'alphabetical', мы меняем его на валидное
+      const correctedValue = (value === 'alphabetical') ? 'alphabetic' : value;
+      return originalSetter.call(this, correctedValue);
+    },
+    get: descriptor.get,
+    configurable: true
+  });
+} catch (e) {
+  console.error("Не удалось применить фикс для Chrome:", e);
+}
+
+// ==================== ИНИЦИАЛИЗАЦИЯ ====================
+document.addEventListener('DOMContentLoaded', function () {
+  initializeCanvas();
+  updateImageLibrary();
+  updateStatus();
+  initializeModals();
+  setupKeyboardShortcuts();
+  setupAltKeyTracking();
+
+  // Добавляем обработчик для кнопки расчета воздуха
+  document.getElementById('calculateAirBtn')?.addEventListener('click', function () {
+    if (!isCalculatingAirVolumes) {
+      calculateAirVolumesForAllLines(true);
+    }
+  });
+
+  // Обработчик изменения размера окна
+  window.addEventListener('resize', handleResize);
+
+  console.log('Редактор технических чертежей загружен!');
+});
+
+// Подавление ошибки CanvasTextBaseline
+(function () {
+  const originalError = console.error;
+  console.error = function (...args) {
+    if (args[0] && typeof args[0] === 'string' &&
+      args[0].includes('alphabetical') &&
+      args[0].includes('CanvasTextBaseline')) {
+      return;
+    }
+    originalError.apply(console, args);
+  };
+})();
+
+function initializeCanvas() {
+  canvas = new fabric.Canvas('fabric-canvas', {
+    backgroundColor: '#ffffff',
+    preserveObjectStacking: true,
+    selection: true,
+    selectionColor: 'rgba(74, 0, 224, 0.3)',
+    selectionBorderColor: '#4A00E0',
+    selectionLineWidth: 2,
+    renderOnAddRemove: true
+  });
+
+  updateCanvasSize();
+  drawGrid(APP_CONFIG.GRID_SIZE);
+  setupCanvasEvents();
+}
+
+function updateCanvasSize() {
+  if (!canvas) return;
+  const wrapper = document.getElementById('canvas-wrapper');
+  if (!wrapper) return;
+
+  const width = wrapper.clientWidth;
+  const height = wrapper.clientHeight;
+
+  canvas.setDimensions({ width, height });
+
+  if (gridVisible) {
+    drawGrid(APP_CONFIG.GRID_SIZE);
+  }
+  canvas.renderAll();
+}
+
+function handleResize() {
+  updateCanvasSize();
+}
+
+// ==================== УТИЛИТЫ ====================
+function roundTo5(value) {
+  if (value === null || value === undefined) return value;
+  return Math.round((value + Number.EPSILON) * 100000) / 100000;
+}
+
+function formatTo5(value) {
+  if (value === null || value === undefined) return '0.00000';
+  return roundTo5(value).toFixed(5);
+}
+
+// ==================== ФУНКЦИИ ДЛЯ ОТОБРАЖЕНИЯ ОБЪЕМА ВОЗДУХА ====================
+function createOrUpdateAirVolumeText(line) {
+  if (line.airVolumeText) {
+    try {
+      canvas.remove(line.airVolumeText);
+    } catch (e) {
+      console.warn('Error removing air volume text:', e);
+    }
+    line.airVolumeText = null;
+  }
+
+  if (!line.properties || line.properties.airVolume === undefined || line.properties.airVolume === null) return;
+
+  try {
+    const midX = (line.x1 + line.x2) / 2;
+    const midY = (line.y1 + line.y2) / 2;
+    const angle = Math.atan2(line.y2 - line.y1, line.x2 - line.x1);
+    const degrees = angle * (180 / Math.PI);
+    const offset = 20;
+    const offsetX = Math.sin(angle) * offset;
+    const offsetY = -Math.cos(angle) * offset;
+
+    const textOptions = {
+      left: midX + offsetX,
+      top: midY + offsetY,
+      fontSize: 12,
+      fontFamily: 'Arial, sans-serif',
+      fill: line.stroke || APP_CONFIG.DEFAULT_LINE_COLOR,
+      fontWeight: 'bold',
+      textBackgroundColor: 'rgba(255, 255, 255, 0.8)',
+      padding: 3,
+      selectable: false,
+      evented: false,
+      originX: 'center',
+      originY: 'center',
+      angle: degrees,
+      lockMovementX: true,
+      lockMovementY: true,
+      lockRotation: true,
+      lockScalingX: true,
+      lockScalingY: true,
+      hasControls: false,
+      hasBorders: false
+    };
+
+    const airVolumeText = new fabric.Text(`${line.properties.airVolume} м³/с`, textOptions);
+    line.airVolumeText = airVolumeText;
+    canvas.add(airVolumeText);
+    airVolumeText.bringToFront();
+    canvas.renderAll();
+    return airVolumeText;
+  } catch (error) {
+    console.error('Error creating air volume text:', error);
+    return null;
+  }
+}
+
+function updateAllAirVolumeTexts() {
+  const lines = canvas.getObjects().filter(obj => obj.type === 'line' && obj.id !== 'grid-line');
+  lines.forEach(line => createOrUpdateAirVolumeText(line));
+  canvas.renderAll();
+}
+
+function removeAirVolumeText(line) {
+  if (line.airVolumeText) {
+    canvas.remove(line.airVolumeText);
+    line.airVolumeText = null;
+    canvas.renderAll();
+  }
+}
+
+// ==================== РАСЧЕТНЫЕ ФУНКЦИИ ====================
+function calculateLinePerimeter(crossSectionalArea) {
+  return roundTo5(3.8 * Math.sqrt(crossSectionalArea));
+}
+
+function calculateAirResistance(roughnessCoefficient, perimeter, passageLength, crossSectionalArea) {
+  if (crossSectionalArea === 0) return 0;
+  return roundTo5((roughnessCoefficient * perimeter * passageLength) / crossSectionalArea);
+}
+
+function calculateAllLineProperties(line) {
+  if (!line.properties) return;
+  const props = line.properties;
+
+  if (props.crossSectionalArea !== undefined) {
+    props.perimeter = calculateLinePerimeter(props.crossSectionalArea);
+  }
+
+  if (props.roughnessCoefficient !== undefined &&
+    props.perimeter !== undefined &&
+    props.passageLength !== undefined &&
+    props.crossSectionalArea !== undefined) {
+    props.airResistance = calculateAirResistance(
+      props.roughnessCoefficient,
+      props.perimeter,
+      props.passageLength,
+      props.crossSectionalArea
+    );
+  }
+  return props;
+}
+
+function normalizeLineProperties(line) {
+  if (!line.properties) return;
+  const props = line.properties;
+
+  if (props.L !== undefined) {
+    props.passageLength = roundTo5(props.L);
+    delete props.L;
+  }
+  if (props.K !== undefined) {
+    props.crossSectionalArea = roundTo5(props.K);
+    delete props.K;
+  }
+  if (props.I !== undefined) {
+    props.roughnessCoefficient = roundTo5(props.I);
+    delete props.I;
+  }
+
+  calculateAllLineProperties(line);
+  line.set('properties', props);
+}
+
+// ==================== УЛУЧШЕННАЯ ФУНКЦИЯ РАСЧЕТА ОБЪЕМА ВОЗДУХА ДЛЯ ЛИНИЙ ====================
+function calculateAirVolumesForAllLines(isManual = false) {
+  if (isCalculatingAirVolumes) {
+    console.log('Расчет уже выполняется, пропускаем вызов');
+    return false;
+  }
+
+  console.log('calculateAirVolumesForAllLines called, but temporarily disabled for debugging');
+
+  if (isManual) {
+    showNotification('Расчет временно отключен для отладки', 'info');
+  }
+
+  return false;
+}
+
+// ==================== УПРАВЛЕНИЕ ОБЪЕКТАМИ ====================
+function getObjectCenter(obj) {
+  const width = roundTo5(obj.width * obj.scaleX);
+  const height = roundTo5(obj.height * obj.scaleY);
+  return {
+    x: roundTo5(obj.left),
+    y: roundTo5(obj.top),
+    width: width,
+    height: height
+  };
+}
+
+function getObjectRect(obj) {
+  const width = roundTo5(obj.width * obj.scaleX);
+  const height = roundTo5(obj.height * obj.scaleY);
+  return {
+    left: roundTo5(obj.left - width / 2),
+    right: roundTo5(obj.left + width / 2),
+    top: roundTo5(obj.top - height / 2),
+    bottom: roundTo5(obj.top + height / 2)
+  };
+}
+
+function findClosestPointOnLine(point, line) {
+  const x1 = line.x1, y1 = line.y1;
+  const x2 = line.x2, y2 = line.y2;
+  const A = roundTo5(point.x - x1);
+  const B = roundTo5(point.y - y1);
+  const C = roundTo5(x2 - x1);
+  const D = roundTo5(y2 - y1);
+  const dot = roundTo5(A * C + B * D);
+  const lenSq = roundTo5(C * C + D * D);
+  let param = -1;
+  if (lenSq !== 0) param = roundTo5(dot / lenSq);
+
+  let xx, yy;
+  if (param < 0) {
+    xx = x1;
+    yy = y1;
+  } else if (param > 1) {
+    xx = x2;
+    yy = y2;
+  } else {
+    xx = roundTo5(x1 + param * C);
+    yy = roundTo5(y1 + param * D);
+  }
+
+  return { x: roundTo5(xx), y: roundTo5(yy), param: param };
+}
+
+function findClosestPointOnObjectEdge(object, point) {
+  if (!object || !point) return null;
+  const objRect = getObjectRect(object);
+  const center = getObjectCenter(object);
+
+  if (object.type === 'image' || object.type === 'rect') {
+    const left = objRect.left, right = objRect.right, top = objRect.top,
+      bottom = objRect.bottom;
+    const isInside = point.x >= left && point.x <= right && point.y >= top && point.y <= bottom;
+
+    if (isInside) {
+      const distToLeft = roundTo5(Math.abs(point.x - left));
+      const distToRight = roundTo5(Math.abs(point.x - right));
+      const distToTop = roundTo5(Math.abs(point.y - top));
+      const distToBottom = roundTo5(Math.abs(point.y - bottom));
+      const minDist = roundTo5(Math.min(distToLeft, distToRight, distToTop, distToBottom));
+
+      if (minDist === distToLeft) return {
+        x: roundTo5(left),
+        y: roundTo5(point.y)
+      };
+      else if (minDist === distToRight) return {
+        x: roundTo5(right),
+        y: roundTo5(point.y)
+      };
+      else if (minDist === distToTop) return {
+        x: roundTo5(point.x),
+        y: roundTo5(top)
+      };
+      else return { x: roundTo5(point.x), y: roundTo5(bottom) };
+    } else {
+      let closestX = roundTo5(Math.max(left, Math.min(point.x, right)));
+      let closestY = roundTo5(Math.max(top, Math.min(point.y, bottom)));
+      const distToLeft = roundTo5(Math.abs(point.x - left));
+      const distToRight = roundTo5(Math.abs(point.x - right));
+      const distToTop = roundTo5(Math.abs(point.y - top));
+      const distToBottom = roundTo5(Math.abs(point.y - bottom));
+      const minDist = roundTo5(Math.min(distToLeft, distToRight, distToTop, distToBottom));
+
+      if (minDist === distToLeft || minDist === distToRight) closestY = roundTo5(point.y);
+      else closestX = roundTo5(point.x);
+
+      closestX = roundTo5(Math.max(left, Math.min(closestX, right)));
+      closestY = roundTo5(Math.max(top, Math.min(closestY, bottom)));
+      return { x: closestX, y: closestY };
+    }
+  }
+
+  if (object.type === 'circle') {
+    const radius = roundTo5(object.radius * object.scaleX);
+    const dx = roundTo5(point.x - center.x);
+    const dy = roundTo5(point.y - center.y);
+    const distance = roundTo5(Math.sqrt(dx * dx + dy * dy));
+    if (distance === 0) return {
+      x: roundTo5(center.x + radius),
+      y: roundTo5(center.y)
+    };
+    const scale = roundTo5(radius / distance);
+    return {
+      x: roundTo5(center.x + dx * scale),
+      y: roundTo5(center.y + dy * scale)
+    };
+  }
+
+  return {
+    x: roundTo5(Math.max(objRect.left, Math.min(point.x, objRect.right))),
+    y: roundTo5(Math.max(objRect.top, Math.min(point.y, objRect.bottom)))
+  };
+}
+
+// ==================== СОБЫТИЯ КАНВАСА ====================
+function setupCanvasEvents() {
+  if (!canvas) return;
+  canvas.on('mouse:down', handleCanvasMouseDown);
+  canvas.on('mouse:move', handleCanvasMouseMove);
+  canvas.on('mouse:out', handleCanvasMouseOut);
+  canvas.on('mouse:dblclick', handleCanvasDoubleClick);
+  canvas.on('selection:created', updatePropertiesPanel);
+  canvas.on('selection:updated', updatePropertiesPanel);
+  canvas.on('selection:cleared', updatePropertiesPanel);
+  canvas.on('object:added', handleObjectAdded);
+  canvas.on('object:modified', handleObjectModified);
+  canvas.on('object:removed', handleObjectRemoved);
+}
+
+function handleCanvasMouseDown(options) {
+  const pointer = canvas.getPointer(options.e);
+  if (options.e.shiftKey && currentImageData) {
+    addImageAtPosition(pointer.x, pointer.y);
+    return;
+  }
+  if (isDrawingLine) {
+    handleLineDrawing(options, pointer);
+    return;
+  }
+  if (options.e.button === 2) {
+    const activeObject = canvas.getActiveObject();
+    if (activeObject) showContextMenu(pointer.x, pointer.y);
+    options.e.preventDefault();
+  }
+}
+
+function handleCanvasMouseMove(options) {
+  if (!isDrawingLine || !lineStartPoint) return;
+
+  const pointer = canvas.getPointer(options.e);
+  const snappedX = roundTo5(snapToGrid(pointer.x, APP_CONFIG.GRID_SIZE));
+  const snappedY = roundTo5(snapToGrid(pointer.y, APP_CONFIG.GRID_SIZE));
+
+  // Обновляем превью линию
+  const previewLine = canvas.getObjects().find(obj => obj.id === 'preview-line');
+  if (previewLine) {
+    previewLine.set({ x2: snappedX, y2: snappedY });
+    previewLine.setCoords();
+  } else if (lineStartPoint) {
+    // Создаем превью если его нет
+    const newPreviewLine = new fabric.Line([lineStartPoint.x, lineStartPoint.y, snappedX, snappedY], {
+      stroke: APP_CONFIG.DEFAULT_LINE_COLOR,
+      strokeWidth: 2,
+      strokeDashArray: [5, 5],
+      selectable: false,
+      evented: false,
+      id: 'preview-line'
+    });
+    canvas.add(newPreviewLine);
+  }
+
+  // Мягкая перерисовка
+  canvas.requestRenderAll();
+}
+
+function handleCanvasMouseOut() {
+  if (altKeyPressed && isDrawingLine) {
+    canvas.forEachObject(obj => {
+      if (obj.type !== 'line' && obj.id !== 'grid-group' && obj.id !== 'grid-line') {
+        obj.set('stroke', null);
+        obj.set('strokeWidth', 0);
+      }
+    });
+    canvas.renderAll();
+  }
+}
+
+function handleCanvasDoubleClick(options) {
+  if (options.target) {
+    canvas.setActiveObject(options.target);
+    showObjectPropertiesModal();
+  }
+}
+
+function handleObjectAdded(e) {
+  if (e.target && e.target.id !== 'intersection-point' && e.target.id !== 'intersection-point-label' && e.target.id !== 'air-volume-text') {
+    setTimeout(() => {
+      bringIntersectionPointsToFront();
+      updateAllAirVolumeTexts();
+      canvas.renderAll();
+    }, 10);
+  }
+}
+
+function handleObjectModified(e) {
+  // Временно отключаем пересчет при модификации
+}
+
+function handleObjectRemoved(e) {
+  if (e.target && e.target.type === 'line' && e.target.airVolumeText) {
+    removeAirVolumeText(e.target);
+  }
+}
+
+function handleLineDrawing(options, pointer) {
+  let snappedX, snappedY;
+  let startPointFromObject = null;
+
+  if (altKeyPressed && options.target) {
+    const targetObject = options.target;
+    const objectEdgePoint = findClosestPointOnObjectEdge(targetObject, pointer);
+    if (objectEdgePoint) {
+      startPointFromObject = {
+        x: roundTo5(objectEdgePoint.x),
+        y: roundTo5(objectEdgePoint.y),
+        object: targetObject,
+        edgePoint: true
+      };
+      snappedX = roundTo5(objectEdgePoint.x);
+      snappedY = roundTo5(objectEdgePoint.y);
+    }
+  }
+
+  if (!startPointFromObject) {
+    snappedX = roundTo5(snapToGrid(pointer.x, APP_CONFIG.GRID_SIZE));
+    snappedY = roundTo5(snapToGrid(pointer.y, APP_CONFIG.GRID_SIZE));
+  }
+
+  if (!lineStartPoint) {
+    // СТАРТ рисования линии
+    lineStartPoint = {
+      x: snappedX,
+      y: snappedY,
+      ...(startPointFromObject || {})
+    };
+
+    previewLine = new fabric.Line([lineStartPoint.x, lineStartPoint.y, snappedX, snappedY], {
+      stroke: APP_CONFIG.DEFAULT_LINE_COLOR,
+      strokeWidth: 2,
+      strokeDashArray: [5, 5],
+      selectable: false,
+      evented: false,
+      id: 'preview-line'
+    });
+
+    canvas.add(previewLine);
+  } else {
+    // ЗАВЕРШЕНИЕ рисования линии
+    const length = roundTo5(Math.sqrt(Math.pow(snappedX - lineStartPoint.x, 2) + Math.pow(snappedY - lineStartPoint.y, 2)));
+
+    const lineId = 'line_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+    const finalLine = new fabric.Line([lineStartPoint.x, lineStartPoint.y, snappedX, snappedY], {
+      stroke: APP_CONFIG.DEFAULT_LINE_COLOR,
+      strokeWidth: APP_CONFIG.DEFAULT_LINE_WIDTH,
+      fill: false,
+      strokeLineCap: 'round',
+      hasControls: true,
+      hasBorders: true,
+      lockRotation: false,
+      id: lineId,
+      properties: {
+        name: `Линия ${canvas.getObjects().filter(o => o.type === 'line').length + 1}`,
+        passageLength: 0.5,
+        roughnessCoefficient: 0.015,
+        crossSectionalArea: 10,
+        W: 1.0,
+        airResistance: 0,
+        airVolume: 0,
+        perimeter: 0,
+        length: length,
+        startPoint: { x: lineStartPoint.x, y: lineStartPoint.y },
+        endPoint: { x: snappedX, y: snappedY }
+      }
+    });
+
+    // Удаляем превью линию
+    if (previewLine) {
+      canvas.remove(previewLine);
+      previewLine = null;
+    }
+
+    // Добавляем финальную линию
+    canvas.add(finalLine);
+    canvas.setActiveObject(finalLine);
+
+    // Рассчитываем свойства
+    calculateAllLineProperties(finalLine);
+
+    // ОДНА перерисовка
+    canvas.renderAll();
+
+    // Обновляем интерфейс
+    updatePropertiesPanel();
+    updateStatus();
+
+    // Сбрасываем состояние
+    if (!isContinuousLineMode) {
+      deactivateAllModes();
+    } else {
+      // Для непрерывного режима - начинаем новую линию с конца текущей
+      lineStartPoint = { x: snappedX, y: snappedY };
+      lastLineEndPoint = { x: snappedX, y: snappedY };
+
+      // Создаем новую превью линию
+      previewLine = new fabric.Line([lineStartPoint.x, lineStartPoint.y, snappedX, snappedY], {
+        stroke: APP_CONFIG.DEFAULT_LINE_COLOR,
+        strokeWidth: 2,
+        strokeDashArray: [5, 5],
+        selectable: false,
+        evented: false,
+        id: 'preview-line'
+      });
+      canvas.add(previewLine);
+    }
+  }
+}
+
+// ==================== УПРАВЛЕНИЕ РЕЖИМАМИ ====================
+function activateLineDrawing() {
+  deactivateAllModes();
+  cleanupPreviewLines();
+
+  isDrawingLine = true;
+  canvas.defaultCursor = 'crosshair';
+  canvas.selection = false;
+  canvas.forEachObject(obj => obj.selectable = false);
+
+  showNotification('Режим рисования линии. Кликните для начала, затем для конца. ESC для отмены.', 'info');
+}
+
+function cleanupPreviewLines() {
+  const previewLines = canvas.getObjects().filter(obj => obj.id === 'preview-line');
+  previewLines.forEach(line => {
+    canvas.remove(line);
+  });
+}
+
+function deactivateAllModes() {
+  isDrawingLine = false;
+
+  // Удаляем превью линию если есть
+  const previewLineObj = canvas.getObjects().find(obj => obj.id === 'preview-line');
+  if (previewLineObj) {
+    canvas.remove(previewLineObj);
+  }
+
+  previewLine = null;
+  lineStartPoint = null;
+  lastLineEndPoint = null;
+  currentImageData = null;
+
+  canvas.defaultCursor = 'default';
+  canvas.selection = true;
+  canvas.forEachObject(obj => {
+    if (obj.id !== 'grid-group') obj.selectable = true;
+  });
+
+  updateStatus();
+}
+
+function toggleContinuousMode() {
+  isContinuousLineMode = !isContinuousLineMode;
+  const btn = document.getElementById('continuousModeBtn');
+  if (isContinuousLineMode) {
+    btn.innerHTML = '<span>🔗</span> Непрерывный (ВКЛ)';
+    showNotification('Непрерывный режим включен', 'success');
+  } else {
+    btn.innerHTML = '<span>🔗</span> Непрерывный (ВЫКЛ)';
+    showNotification('Непрерывный режим выключен', 'info');
+  }
+}
+
+function toggleAutoSplitMode() {
+  autoSplitMode = !autoSplitMode;
+  const btn = document.getElementById('autoSplitBtn');
+  if (autoSplitMode) {
+    btn.innerHTML = '<span>⚡</span> Авторазбивка (ВКЛ)';
+    showNotification('Автоматическое разделение линий включено', 'success');
+  } else {
+    btn.innerHTML = '<span>⚡</span> Авторазбивка (ВЫКЛ)';
+    showNotification('Автоматическое разделение линий отключено', 'info');
+  }
+}
+
+function toggleLineSplitMode() {
+  if (lineSplitMode === 'AUTO') {
+    lineSplitMode = 'MANUAL';
+    document.getElementById('lineSplitModeBtn').innerHTML = '<span>🎯</span> Режим: РУЧНОЙ';
+    showNotification('Режим разбиения: РУЧНОЙ', 'info');
+  } else {
+    lineSplitMode = 'AUTO';
+    document.getElementById('lineSplitModeBtn').innerHTML = '<span>🎯</span> Режим: АВТО';
+    showNotification('Режим разбиения: АВТО', 'info');
+  }
+}
+
+// ==================== СЕТКА ====================
+function drawGrid(gridSize = APP_CONFIG.GRID_SIZE) {
+  const oldGrid = canvas ? canvas.getObjects().filter(obj => obj.id === 'grid-group') : [];
+  oldGrid.forEach(obj => canvas.remove(obj));
+  if (!gridVisible || !canvas) return;
+
+  const width = canvas.width || 1200;
+  const height = canvas.height || 700;
+  const gridLines = [];
+
+  for (let x = 0; x <= width; x += gridSize) {
+    gridLines.push(new fabric.Line([x, 0, x, height], {
+      stroke: 'rgba(224, 224, 224, 0.5)',
+      strokeWidth: 1,
+      selectable: false,
+      evented: false,
+      id: 'grid-line'
+    }));
+  }
+
+  for (let y = 0; y <= height; y += gridSize) {
+    gridLines.push(new fabric.Line([0, y, width, y], {
+      stroke: 'rgba(224, 224, 224, 0.5)',
+      strokeWidth: 1,
+      selectable: false,
+      evented: false,
+      id: 'grid-line'
+    }));
+  }
+
+  const gridGroup = new fabric.Group(gridLines, {
+    selectable: false,
+    evented: false,
+    id: 'grid-group'
+  });
+  canvas.add(gridGroup);
+  canvas.sendToBack(gridGroup);
+  canvas.renderAll();
+}
+
+function toggleGrid() {
+  gridVisible = !gridVisible;
+  const btn = document.getElementById('gridToggleBtn');
+  if (gridVisible) {
+    btn.innerHTML = '<span>🔲</span> Сетка (ВКЛ)';
+    drawGrid(APP_CONFIG.GRID_SIZE);
+    showNotification('Сетка включена', 'success');
+  } else {
+    btn.innerHTML = '<span>🔲</span> Сетка (ВЫКЛ)';
+    drawGrid(APP_CONFIG.GRID_SIZE);
+    showNotification('Сетка отключена', 'info');
+  }
+  canvas.renderAll();
+}
+
+function snapToGrid(value, gridSize = APP_CONFIG.GRID_SIZE) {
+  return roundTo5(Math.round(value / gridSize) * gridSize);
+}
+
+// ==================== ИЗОБРАЖЕНИЯ ====================
 function updateImageLibrary() {
   const grid = document.getElementById('imageLibraryGrid');
   if (!grid) return;
@@ -1229,16 +981,20 @@ function addImageAtPosition(x, y) {
     saveToUndoStack();
     canvas.add(img);
     canvas.setActiveObject(img);
+    canvas.renderAll();
 
     if (autoSplitMode) {
-      setTimeout(() => splitLinesAtImagePosition(img), 50);
+      setTimeout(() => {
+        splitLinesAtImagePosition(img);
+        canvas.renderAll();
+      }, 50);
     }
 
     updatePropertiesPanel();
     updateStatus();
     showNotification(`${currentImageData.name} добавлен`, 'success');
 
-  }, {crossOrigin: 'anonymous'});
+  }, { crossOrigin: 'anonymous' });
 }
 
 // ==================== РАЗДЕЛЕНИЕ ЛИНИЙ ====================
@@ -1300,9 +1056,9 @@ function splitAllLines() {
   setTimeout(() => {
     updateAllAirVolumeTexts();
     calculateAirVolumesForAllLines();
+    canvas.renderAll();
   }, 100);
 
-  canvas.renderAll();
   bringIntersectionPointsToFront();
 
   if (intersections.length > 0) {
@@ -1351,6 +1107,7 @@ function splitAllLinesAtObjectCenters() {
     intersectionPoints = intersections;
     intersections.forEach((inter, idx) => createIntersectionPoint(inter.x, inter.y, idx, inter));
     bringIntersectionPointsToFront();
+    canvas.renderAll();
   }, 50);
 
   if (splitCount > 0) {
@@ -1411,7 +1168,7 @@ function lineIntersection(line1, line2) {
   if (ua >= 0 && ua <= 1 && ub >= 0 && ub <= 1) {
     const x = roundTo5(x1 + ua * (x2 - x1));
     const y = roundTo5(y1 + ua * (y2 - y1));
-    return {x, y, ua, ub, line1, line2};
+    return { x, y, ua, ub, line1, line2 };
   }
   return null;
 }
@@ -1475,8 +1232,8 @@ function splitLineAtPoint(line, point) {
       perimeter: perimeter1,
       airResistance: airResistance1,
       airVolume: airVolume,
-      startPoint: {x: line.x1, y: line.y1},
-      endPoint: {x: point.x, y: point.y}
+      startPoint: { x: line.x1, y: line.y1 },
+      endPoint: { x: point.x, y: point.y }
     }
   });
 
@@ -1497,8 +1254,8 @@ function splitLineAtPoint(line, point) {
       perimeter: perimeter2,
       airResistance: airResistance2,
       airVolume: airVolume,
-      startPoint: {x: point.x, y: point.y},
-      endPoint: {x: line.x2, y: line.y2}
+      startPoint: { x: point.x, y: point.y },
+      endPoint: { x: line.x2, y: line.y2 }
     }
   });
 
@@ -1508,7 +1265,7 @@ function splitLineAtPoint(line, point) {
     if (line1.properties) line1.properties.startsFromObject = line.properties?.startsFromObject;
   }
 
-  return {line1, line2};
+  return { line1, line2 };
 }
 
 function splitLinesAtImagePosition(image) {
@@ -1540,9 +1297,12 @@ function splitLinesAtImagePosition(image) {
     }
   });
 
-  setTimeout(() => updateAllAirVolumeTexts(), 50);
+  setTimeout(() => {
+    updateAllAirVolumeTexts();
+    canvas.renderAll();
+  }, 50);
+
   if (splitCount > 0) showNotification(`Разделено ${splitCount} линий по центру объектов`, 'success');
-  canvas.renderAll();
 }
 
 // ==================== ТОЧКИ ПЕРЕСЕЧЕНИЯ ====================
@@ -1592,13 +1352,14 @@ function createIntersectionPoint(x, y, index, intersectionData, customColor = '#
   canvas.add(text);
   circle.bringToFront();
   text.bringToFront();
-  intersectionVisuals.push({circle, text});
+  intersectionVisuals.push({ circle, text });
+  canvas.renderAll();
   return circle;
 }
 
 function createIntersectionPointForLineStart(line) {
   if (!line.lineStartsFromObject || !line.startObject) return;
-  const startPoint = {x: line.x1, y: line.y1};
+  const startPoint = { x: line.x1, y: line.y1 };
   const existingPoint = intersectionPoints.find(p =>
     roundTo5(Math.abs(p.x - startPoint.x)) < 0.00001 && roundTo5(Math.abs(p.y - startPoint.y)) < 0.00001
   );
@@ -1626,6 +1387,7 @@ function bringIntersectionPointsToFront() {
       visual.text.bringToFront();
     }
   });
+  canvas.renderAll();
 }
 
 function clearIntersectionPoints() {
@@ -1637,6 +1399,7 @@ function clearIntersectionPoints() {
   }
   intersectionPoints = [];
   intersectionVisuals = [];
+  canvas.renderAll();
 }
 
 // ==================== МОДАЛЬНОЕ ОКНО ИНФОРМАЦИИ О ТОЧКЕ ====================
@@ -1698,8 +1461,8 @@ function showIntersectionPointInfo(pointIndex) {
             <div class="property-label">Статус:</div>
             <div class="property-value">
               ${Math.abs(endingLine.properties.airVolume - startingLine.properties.airVolume) < 0.0001
-        ? '<span style="color: #00b894;">✓ Значения совпадают</span>'
-        : '<span style="color: #e17055;">⚠ Значения различаются</span>'}
+          ? '<span style="color: #00b894;">✓ Значения совпадают</span>'
+          : '<span style="color: #e17055;">⚠ Значения различаются</span>'}
             </div>
           </div>
         </div>
@@ -1907,9 +1670,10 @@ window.zoomToPoint = function (pointIndex) {
   canvas.setZoom(zoomLevel);
   const centerX = roundTo5(pointData.x - canvas.width / (2 * zoomLevel));
   const centerY = roundTo5(pointData.y - canvas.height / (2 * zoomLevel));
-  canvas.absolutePan({x: -centerX, y: -centerY});
+  canvas.absolutePan({ x: -centerX, y: -centerY });
   showNotification('Приближено к точке', 'info');
   closeIntersectionPointModal();
+  canvas.renderAll();
 };
 
 window.selectObjectsAtPoint = function (pointIndex) {
@@ -1933,7 +1697,7 @@ window.selectObjectsAtPoint = function (pointIndex) {
   });
 
   if (objectsToSelect.length > 0) {
-    const selection = new fabric.ActiveSelection(objectsToSelect, {canvas});
+    const selection = new fabric.ActiveSelection(objectsToSelect, { canvas });
     canvas.setActiveObject(selection);
     canvas.renderAll();
     showNotification(`Выбрано ${objectsToSelect.length} объектов`, 'success');
@@ -2453,7 +2217,7 @@ function saveDrawing() {
   const json = JSON.stringify(canvas.toJSON(['id', 'properties', 'pointIndex', 'pointData', 'lineStartsFromObject', 'startObject', 'airVolumeText']));
   localStorage.setItem('fabricDrawing', json);
 
-  const blob = new Blob([json], {type: 'application/json'});
+  const blob = new Blob([json], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
@@ -2501,9 +2265,9 @@ function loadDrawing() {
           setTimeout(() => {
             updateAllAirVolumeTexts();
             calculateAirVolumesForAllLines();
+            canvas.renderAll();
           }, 100);
 
-          canvas.renderAll();
           updatePropertiesPanel();
           updateStatus();
           const count = canvas.getObjects().filter(obj => obj.id !== 'grid-group' && obj.id !== 'grid-line').length;
@@ -2550,8 +2314,8 @@ function undoAction() {
     setTimeout(() => {
       updateAllAirVolumeTexts();
       calculateAirVolumesForAllLines();
+      canvas.renderAll();
     }, 10);
-    canvas.renderAll();
     updatePropertiesPanel();
     updateStatus();
   });
@@ -2567,8 +2331,8 @@ function redoAction() {
     setTimeout(() => {
       updateAllAirVolumeTexts();
       calculateAirVolumesForAllLines();
+      canvas.renderAll();
     }, 10);
-    canvas.renderAll();
     updatePropertiesPanel();
     updateStatus();
   });
@@ -2587,7 +2351,12 @@ function updateUndoRedoButtons() {
 function setupKeyboardShortcuts() {
   document.addEventListener('keydown', function (event) {
     if (event.key === 'Escape') {
-      deactivateAllModes();
+      if (isDrawingLine) {
+        deactivateAllModes();
+        cleanupPreviewLines();
+        canvas.renderAll();
+        showNotification('Режим рисования отменен', 'info');
+      }
       hideContextMenu();
     }
 
@@ -2597,6 +2366,7 @@ function setupKeyboardShortcuts() {
         saveToUndoStack();
         if (activeObject.type === 'line') removeAirVolumeText(activeObject);
         canvas.remove(activeObject);
+        canvas.renderAll();
         updatePropertiesPanel();
         updateStatus();
         showNotification('Объект удален', 'info');
@@ -2814,7 +2584,7 @@ function exportLinePropertiesToCSV() {
     csvContent += `"${name}",${formatTo5(length)},${formatTo5(props.passageLength || 0)},${formatTo5(props.roughnessCoefficient || 0)},${formatTo5(props.crossSectionalArea || 0)},${formatTo5(props.perimeter || 0)},${formatTo5(props.W || 0)},${formatTo5(props.airResistance || 0)},${formatTo5(props.airVolume || 0)},"${line.stroke || APP_CONFIG.DEFAULT_LINE_COLOR}",${line.strokeWidth || 2}\n`;
   });
 
-  const blob = new Blob([csvContent], {type: 'text/csv;charset=utf-8;'});
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
@@ -2859,7 +2629,7 @@ function exportToPDF() {
   tempCtx.drawImage(canvasElement, 0, 0, width, height);
 
   try {
-    const {jsPDF} = window.jspdf;
+    const { jsPDF } = window.jspdf;
     const pdf = new jsPDF({
       orientation: width > height ? 'landscape' : 'portrait',
       unit: 'px',
@@ -2918,7 +2688,7 @@ function exportToPDFWithHtml2Canvas() {
   })
     .then(capturedCanvas => {
       try {
-        const {jsPDF} = window.jspdf;
+        const { jsPDF } = window.jspdf;
         const imgWidth = 210;
         const imgHeight = (capturedCanvas.height * imgWidth) / capturedCanvas.width;
         const pdf = new jsPDF('p', 'mm', 'a4');
@@ -2926,9 +2696,9 @@ function exportToPDFWithHtml2Canvas() {
         const x = (pdf.internal.pageSize.getWidth() - imgWidth) / 2;
         pdf.addImage(imgData, 'PNG', x, 10, imgWidth, imgHeight);
         pdf.setFontSize(16);
-        pdf.text('Технический чертеж', 105, 5, {align: 'center'});
+        pdf.text('Технический чертеж', 105, 5, { align: 'center' });
         pdf.setFontSize(10);
-        pdf.text(`Дата создания: ${new Date().toLocaleDateString()}`, 105, 290, {align: 'center'});
+        pdf.text(`Дата создания: ${new Date().toLocaleDateString()}`, 105, 290, { align: 'center' });
         const fileName = `технический_чертеж_${new Date().toISOString().slice(0, 10)}.pdf`;
         pdf.save(fileName);
         showNotification('PDF успешно сохранен в формате A4!', 'success');
@@ -2943,14 +2713,14 @@ function exportToPDFWithHtml2Canvas() {
         canvas.renderAll();
       }
     }).catch(error => {
-    console.error('Ошибка html2canvas:', error);
-    showNotification('Ошибка при захвате изображения: ' + error.message, 'error');
-    if (wasGridVisible) toggleGrid();
-    originalTextsVisibility.forEach(item => {
-      if (item.text && !item.text.isRemoved) item.text.visible = item.visible;
+      console.error('Ошибка html2canvas:', error);
+      showNotification('Ошибка при захвате изображения: ' + error.message, 'error');
+      if (wasGridVisible) toggleGrid();
+      originalTextsVisibility.forEach(item => {
+        if (item.text && !item.text.isRemoved) item.text.visible = item.visible;
+      });
+      canvas.renderAll();
     });
-    canvas.renderAll();
-  });
 }
 
 function exportToPDFWithOptions() {
@@ -3017,7 +2787,7 @@ function exportToPDFAdvanced(options = {}) {
     .then(capturedCanvas => {
       let pageWidth = 210, pageHeight = 297;
       try {
-        const {jsPDF} = window.jspdf;
+        const { jsPDF } = window.jspdf;
         let pdf, imgWidth, imgHeight, x, y;
 
         if (format === 'original') {
@@ -3030,7 +2800,7 @@ function exportToPDFAdvanced(options = {}) {
           });
           pdf.addImage(capturedCanvas, 'PNG', 0, 0, imgWidthMM, imgHeightMM);
         } else {
-          const formatDimensions = {'A4': [210, 297], 'A3': [297, 420]};
+          const formatDimensions = { 'A4': [210, 297], 'A3': [297, 420] };
           [pageWidth, pageHeight] = formatDimensions[format] || [210, 297];
           pdf = new jsPDF('p', 'mm', format);
           const margin = 20;
@@ -3078,14 +2848,14 @@ function exportToPDFAdvanced(options = {}) {
         canvas.renderAll();
       }
     }).catch(error => {
-    console.error('Ошибка html2canvas:', error);
-    showNotification('Ошибка при захвате изображения: ' + error.message, 'error');
-    if (wasGridVisible !== gridVisible) toggleGrid();
-    originalTextsVisibility.forEach(item => {
-      if (item.text && !item.text.isRemoved) item.text.visible = item.visible;
+      console.error('Ошибка html2canvas:', error);
+      showNotification('Ошибка при захвате изображения: ' + error.message, 'error');
+      if (wasGridVisible !== gridVisible) toggleGrid();
+      originalTextsVisibility.forEach(item => {
+        if (item.text && !item.text.isRemoved) item.text.visible = item.visible;
+      });
+      canvas.renderAll();
     });
-    canvas.renderAll();
-  });
 }
 
 window.exportToPDF = exportToPDF;
