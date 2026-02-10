@@ -1,4 +1,4 @@
-console.log("07/02/2026 10-30 - Версия с неразрывными соединениями линий - ПОЛНАЯ ФИНАЛЬНАЯ");
+console.log("07/02/2026 10-30 - Версия с неразрывными соединениями линий - ПОЛНАЯ ФИНАЛЬНАЯ - ИСПРАВЛЕННАЯ");
 // ==================== КОНСТАНТЫ И ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ ====================
 const APP_CONFIG = {
   GRID_SIZE: 20,
@@ -250,12 +250,10 @@ document.addEventListener('DOMContentLoaded', function () {
   initializeIntersectionPointModal();
   createIntersectionPointModal();
 
-
   initializeCanvas();
   updateImageLibrary();
   updateStatus();
   initializeModals();
-  // initializeIntersectionPointModal(); // Добавьте эту строку
   setupKeyboardShortcuts();
   setupAltKeyTracking();
 
@@ -333,6 +331,13 @@ function roundTo5(value) {
 function formatTo5(value) {
   if (value === null || value === undefined) return '0.00000';
   return roundTo5(value).toFixed(5);
+}
+
+function resetCalculationFlags() {
+  isCalculatingAirVolumes = false;
+  isDrawingImage = false;
+  isProcessingEvents = false;
+  console.log('Флаги расчета сброшены');
 }
 
 // ==================== ФУНКЦИИ ДЛЯ УПРАВЛЕНИЯ УЗЛАМИ ====================
@@ -606,16 +611,33 @@ function calculateAirVolumesForAllLines(isManual = false) {
   }
 
   if (isCalculatingAirVolumes) {
-    console.log('Расчет уже выполняется, пропускаем вызов');
-    return false;
+    const calcStartTime = window.calcStartTime || 0;
+    if (Date.now() - calcStartTime > 10000) { // 10 секунд
+      console.warn('Расчет завис более 10 секунд, сбрасываю флаги');
+      resetCalculationFlags();
+      showNotification('Предыдущий расчет был сброшен из-за зависания', 'warning');
+    } else {
+      showNotification('Расчет уже выполняется, подождите...', 'warning');
+      return false;
+    }
   }
 
+  window.calcStartTime = Date.now();
+
   isCalculatingAirVolumes = true;
-  showNotification('Начинается расчет объемов воздуха...', 'info', 3000);
+
+  isDrawingImage = false;
+
+  // Показываем уведомление на короткое время
+  showNotification('Начинается расчет объемов воздуха...', 'info', 1000);
 
   try {
-    const lines = canvas.getObjects().filter(obj => obj.type === 'line' && obj.id !== 'grid-line');
-    const images = canvas.getObjects().filter(obj => obj.type === 'image' && obj.properties);
+    const lines = canvas.getObjects().filter(obj =>
+      obj.type === 'line' && obj.id !== 'grid-line' && !obj.isPreview
+    );
+    const images = canvas.getObjects().filter(obj =>
+      obj.type === 'image' && obj.properties
+    );
 
     // Строим граф соединений
     const nodes = new Map();
@@ -785,10 +807,9 @@ function calculateAirVolumesForAllLines(isManual = false) {
     showNotification('Ошибка при расчете объемов воздуха: ' + error.message, 'error');
     return false;
   } finally {
-    setTimeout(() => {
-      isCalculatingAirVolumes = false;
-      isDrawingImage = false;
-    }, 100);
+    // Сбрасываем флаги сразу после завершения
+    isCalculatingAirVolumes = false;
+    isDrawingImage = false;
   }
 }
 
@@ -1206,42 +1227,34 @@ function findLineAtPoint(point, threshold = APP_CONFIG.SNAP_RADIUS) {
 }
 
 function handleCanvasMouseDown(options) {
-  if (isProcessingEvents || isCalculatingAirVolumes) return;
+  // ОСНОВНОЕ ИСПРАВЛЕНИЕ: Убрана блокировка по isProcessingEvents и isCalculatingAirVolumes
+  // Вместо этого используем более точные проверки
 
-  if (isCalculatingAirVolumes) {
-    showNotification('Дождитесь завершения расчета!', 'warning');
+  const pointer = canvas.getPointer(options.e);
+
+  if (options.e.shiftKey && currentImageData) {
+    // Проверяем только, если идет расчет воздуха
+    if (isCalculatingAirVolumes) {
+      showNotification('Дождитесь завершения расчета перед добавлением объектов!', 'warning');
+      return;
+    }
+
+    // Добавляем изображение с небольшой задержкой
+    setTimeout(() => {
+      addImageAtPosition(pointer.x, pointer.y);
+    }, 10);
     return;
   }
 
-  isProcessingEvents = true;
+  if (isDrawingLine) {
+    handleLineDrawingStart(options, pointer);
+    return;
+  }
 
-  try {
-    const pointer = canvas.getPointer(options.e);
-
-    if (options.e.shiftKey && currentImageData) {
-      if (isCalculatingAirVolumes) {
-        showNotification('Дождитесь завершения расчета перед добавлением объектов!', 'warning');
-        return;
-      }
-
-      setTimeout(() => {
-        addImageAtPosition(pointer.x, pointer.y);
-      }, 10);
-      return;
-    }
-
-    if (isDrawingLine) {
-      handleLineDrawingStart(options, pointer);
-      return;
-    }
-
-    if (options.e.button === 2) {
-      const activeObject = canvas.getActiveObject();
-      if (activeObject) showContextMenu(pointer.x, pointer.y);
-      options.e.preventDefault();
-    }
-  } finally {
-    isProcessingEvents = false;
+  if (options.e.button === 2) {
+    const activeObject = canvas.getActiveObject();
+    if (activeObject) showContextMenu(pointer.x, pointer.y);
+    options.e.preventDefault();
   }
 }
 
@@ -1485,7 +1498,7 @@ function handleLineDrawingEnd(options, pointer) {
 }
 
 function handleCanvasMouseMove(options) {
-  if (!isDrawingLine || !lineStartPoint || isProcessingEvents) return;
+  if (!isDrawingLine || !lineStartPoint) return;
 
   const pointer = canvas.getPointer(options.e);
   const snappedX = roundTo5(snapToGrid(pointer.x, APP_CONFIG.GRID_SIZE));
@@ -1741,10 +1754,8 @@ function addImageAtPosition(x, y) {
     return;
   }
 
-  if (isCalculatingAirVolumes) {
-    showNotification('Дождитесь завершения расчета перед добавлением изображений!', 'warning');
-    return;
-  }
+  // ОСНОВНОЕ ИСПРАВЛЕНИЕ: убрана проверка на isCalculatingAirVolumes
+  // Теперь изображение можно добавлять в любое время
 
   isDrawingImage = true;
 
@@ -1804,6 +1815,7 @@ function addImageAtPosition(x, y) {
 
 // ==================== РАЗДЕЛЕНИЕ ЛИНИЙ (ИСПРАВЛЕННОЕ) ====================
 function splitAllLines() {
+  // ОСНОВНОЕ ИСПРАВЛЕНИЕ: убраны флаги, блокирующие добавление изображений
   clearIntersectionPoints();
   const intersections = findAllIntersections();
   intersectionPoints = intersections;
@@ -2202,8 +2214,6 @@ function splitLinesAtImagePosition(image) {
   if (splitCount > 0) showNotification(`Разделено ${splitCount} линий по центру объектов`, 'success');
 }
 
-// ==================== ТОЧКИ ПЕРЕСЕЧЕНИЯ ====================
-// ==================== ТОЧКИ ПЕРЕСЕЧЕНИЯ ====================
 // ==================== ТОЧКИ ПЕРЕСЕЧЕНИЯ ====================
 function createIntersectionPoint(x, y, index, intersectionData, customColor = '#ff4757') {
   const circle = new fabric.Circle({
@@ -2693,6 +2703,12 @@ function updateStatus() {
       }
     }
   }
+
+  // Добавьте информацию о расчете
+  if (isCalculatingAirVolumes) {
+    statusText += ' | 🔄 <strong>Идет расчет воздуха...</strong>';
+  }
+
   if (lineSplitMode === 'MANUAL') statusText += ' | 🎯 <strong>Ручной режим</strong>';
   if (altKeyPressed) statusText += ' | <strong>Alt: Привязка к объектам</strong>';
   if (nodeLockEnabled) statusText += ' | 🔒 <strong>Узлы заблокированы</strong>';
@@ -3394,9 +3410,23 @@ document.addEventListener('DOMContentLoaded', function () {
     closePdfBtn.addEventListener('click', closePdfExportModal);
   }
 
+  document.getElementById('resetCalcBtn')?.addEventListener('click', function () {
+    resetCalculationFlags();
+    showNotification('Флаги расчета сброшены. Теперь можно добавлять объекты.', 'success');
+  });
+
   const exportPdfBtn = document.getElementById('exportPdfBtn');
   if (exportPdfBtn) {
     exportPdfBtn.addEventListener('click', exportToPdf);
+  }
+
+  // Добавьте после инициализации других кнопок:
+  const resetCalcBtn = document.getElementById('resetCalcBtn');
+  if (resetCalcBtn) {
+    resetCalcBtn.addEventListener('click', function () {
+      resetCalculationFlags();
+      showNotification('Флаги расчета сброшены. Теперь можно добавлять объекты.', 'success');
+    });
   }
 
   initializeTooltips();
@@ -3738,7 +3768,6 @@ function analyzeIntersectionPoints() {
   return pointsMap;
 }
 
-// ==================== ЭКСПОРТ ГЛОБАЛЬНЫХ ФУНКЦИЙ ====================
 // ==================== ЭКСПОРТ ГЛОБАЛЬНЫХ ФУНКЦИЙ ====================
 window.canvas = canvas;
 window.analyzeIntersectionPoints = analyzeIntersectionPoints;

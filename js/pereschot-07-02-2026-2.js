@@ -1,4 +1,4 @@
-console.log("07/02/2026 10-30 - Версия с неразрывными соединениями линий - ФИНАЛЬНАЯ");
+console.log("07/02/2026 10-30 - Версия с неразрывными соединениями линий - ПОЛНАЯ ФИНАЛЬНАЯ");
 // ==================== КОНСТАНТЫ И ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ ====================
 const APP_CONFIG = {
   GRID_SIZE: 20,
@@ -34,14 +34,24 @@ let currentEditingObjectType = null;
 let isCalculatingAirVolumes = false;
 
 let connectionNodes = new Map();
-let isDraggingNode = false;
-let draggedNodeKey = null;
-let affectedLines = [];
 let nodeLockEnabled = APP_CONFIG.NODE_LOCK_DEFAULT;
 
 // Флаги для предотвращения рекурсии
 let isUpdatingConnections = false;
 let isProcessingEvents = false;
+let isDrawingImage = false;
+
+// Отладочный код для проверки создания модального окна
+window.debugIntersectionModal = function () {
+  console.log('Проверка модального окна:');
+  console.log('intersectionPointModal:', document.getElementById('intersectionPointModal'));
+  console.log('intersectionPointInfoContent:', document.getElementById('intersectionPointInfoContent'));
+
+  if (!document.getElementById('intersectionPointModal')) {
+    console.log('Создаю модальное окно...');
+    createIntersectionPointModal();
+  }
+};
 
 const defaultImages = [
   {
@@ -236,12 +246,21 @@ try {
 
 // ==================== ИНИЦИАЛИЗАЦИЯ ====================
 document.addEventListener('DOMContentLoaded', function () {
+  // Создаем модальное окно для точек пересечения сразу
+  initializeIntersectionPointModal();
+  createIntersectionPointModal();
+
+
   initializeCanvas();
   updateImageLibrary();
   updateStatus();
   initializeModals();
+  // initializeIntersectionPointModal(); // Добавьте эту строку
   setupKeyboardShortcuts();
   setupAltKeyTracking();
+
+  // Инициализация модального окна для точек пересечения
+  initializeIntersectionPointModal();
 
   const nodeLockBtn = document.getElementById('nodeLockBtn');
   if (nodeLockBtn) {
@@ -381,188 +400,15 @@ function buildConnectionGraph() {
   }
 }
 
-function drawConnectionNodes() {
-  if (isProcessingEvents) return;
-  isProcessingEvents = true;
-
-  try {
-    const nodeMarkers = canvas.getObjects().filter(obj =>
-      obj.id === 'node-marker' || obj.id === 'node-marker-text'
-    );
-
-    nodeMarkers.forEach(obj => {
-      try {
-        canvas.remove(obj);
-      } catch (e) {
-        // Игнорируем ошибки удаления
-      }
-    });
-
-    connectionNodes.forEach((node, key) => {
-      if (node.lines.length >= 2) {
-        const circle = new fabric.Circle({
-          left: node.x - 10,
-          top: node.y - 10,
-          radius: 10,
-          fill: node.locked ? 'rgba(33, 150, 243, 0.8)' : 'rgba(255, 152, 0, 0.8)',
-          stroke: node.locked ? '#2196F3' : '#FF9800',
-          strokeWidth: 2,
-          selectable: false,
-          evented: true,
-          id: 'node-marker',
-          originX: 'center',
-          originY: 'center',
-          hoverCursor: 'move',
-          nodeKey: key
-        });
-
-        const text = new fabric.Text(node.lines.length.toString(), {
-          left: node.x,
-          top: node.y,
-          fontSize: 10,
-          fill: 'white',
-          fontWeight: 'bold',
-          originX: 'center',
-          originY: 'center',
-          selectable: false,
-          evented: false,
-          id: 'node-marker-text'
-        });
-
-        circle.on('mousedown', function (e) {
-          e.e.preventDefault();
-          e.e.stopPropagation();
-          startNodeDrag(key, e.e.clientX, e.e.clientY);
-        });
-
-        canvas.add(circle);
-        canvas.add(text);
-      }
-    });
-
-    bringIntersectionPointsToFront();
-    bringNodeMarkersToFront();
-  } finally {
-    isProcessingEvents = false;
-  }
-}
-
-function bringNodeMarkersToFront() {
-  canvas.getObjects()
-    .filter(obj => obj.id === 'node-marker' || obj.id === 'node-marker-text')
-    .forEach(obj => obj.bringToFront());
-}
-
-function startNodeDrag(nodeKey, clientX, clientY) {
-  if (!connectionNodes.has(nodeKey)) return;
-
-  const node = connectionNodes.get(nodeKey);
-  if (node.lines.length < 2) return;
-
-  isDraggingNode = true;
-  draggedNodeKey = nodeKey;
-  affectedLines = [...node.lines];
-
-  affectedLines.forEach(lineInfo => {
-    if (!lineInfo.line.originalPositions) {
-      lineInfo.line.originalPositions = {};
-    }
-    if (lineInfo.isStart) {
-      lineInfo.line.originalPositions.x1 = lineInfo.line.x1;
-      lineInfo.line.originalPositions.y1 = lineInfo.line.y1;
-    } else {
-      lineInfo.line.originalPositions.x2 = lineInfo.line.x2;
-      lineInfo.line.originalPositions.y2 = lineInfo.line.y2;
-    }
-  });
-
-  canvas.defaultCursor = 'move';
-  canvas.selection = false;
-
-  canvas.forEachObject(obj => {
-    if (obj.id !== 'node-marker' && obj.id !== 'node-marker-text') {
-      obj.selectable = false;
-    }
-  });
-
-  showNotification(`Перетаскивание узла (${node.lines.length} линий)`, 'info');
-}
-
-function updateNodeDrag(mouseX, mouseY) {
-  if (!isDraggingNode || !draggedNodeKey) return;
-
-  const pointer = canvas.getPointer({clientX: mouseX, clientY: mouseY});
-  const node = connectionNodes.get(draggedNodeKey);
-
-  if (!node) return;
-
-  const deltaX = pointer.x - node.x;
-  const deltaY = pointer.y - node.y;
-
-  affectedLines.forEach(lineInfo => {
-    const line = lineInfo.line;
-
-    if (lineInfo.isStart) {
-      line.set({
-        x1: roundTo5(line.x1 + deltaX),
-        y1: roundTo5(line.y1 + deltaY)
-      });
-    } else {
-      line.set({
-        x2: roundTo5(line.x2 + deltaX),
-        y2: roundTo5(line.y2 + deltaY)
-      });
-    }
-
-    line.setCoords();
-  });
-
-  node.x = roundTo5(pointer.x);
-  node.y = roundTo5(pointer.y);
-
-  const newKey = `${node.x}_${node.y}`;
-  if (newKey !== draggedNodeKey) {
-    connectionNodes.set(newKey, node);
-    connectionNodes.delete(draggedNodeKey);
-    draggedNodeKey = newKey;
-  }
-
-  canvas.renderAll();
-}
-
-function endNodeDrag() {
-  if (!isDraggingNode) return;
-
-  isDraggingNode = false;
-  draggedNodeKey = null;
-  affectedLines = [];
-
-  canvas.defaultCursor = 'default';
-  canvas.selection = true;
-  canvas.forEachObject(obj => {
-    if (obj.id !== 'grid-group' && obj.id !== 'grid-line') {
-      obj.selectable = true;
-    }
-  });
-
-  // Обновляем граф и тексты с задержкой, чтобы избежать рекурсии
-  setTimeout(() => {
-    updateLineConnections();
-    updateAllAirVolumeTexts();
-  }, 100);
-
-  showNotification('Узел перемещен со всеми соединенными линиями', 'success');
-}
-
-function updateLineConnections() {
+function updateConnectionGraph() {
   if (isUpdatingConnections) return;
   isUpdatingConnections = true;
 
   try {
     buildConnectionGraph();
-    drawConnectionNodes();
+    bringIntersectionPointsToFront();
   } catch (error) {
-    console.error('Ошибка в updateLineConnections:', error);
+    console.error('Ошибка в updateConnectionGraph:', error);
   } finally {
     isUpdatingConnections = false;
   }
@@ -589,7 +435,7 @@ function toggleNodeLock() {
     nodeLockEnabled ? 'warning' : 'info'
   );
 
-  drawConnectionNodes();
+  updateConnectionGraph();
   canvas.renderAll();
 }
 
@@ -607,25 +453,6 @@ function isPointInLockedNode(x, y, threshold = APP_CONFIG.NODE_THRESHOLD) {
     }
   }
   return null;
-}
-
-function getNearestNode(x, y) {
-  let nearestNode = null;
-  let minDistance = Infinity;
-
-  for (const [key, node] of connectionNodes.entries()) {
-    const distance = Math.sqrt(
-      Math.pow(x - node.x, 2) +
-      Math.pow(y - node.y, 2)
-    );
-
-    if (distance < minDistance) {
-      minDistance = distance;
-      nearestNode = {key, node, distance};
-    }
-  }
-
-  return nearestNode;
 }
 
 // ==================== ФУНКЦИИ ДЛЯ ОТОБРАЖЕНИЯ ОБЪЕМА ВОЗДУХА ====================
@@ -790,208 +617,144 @@ function calculateAirVolumesForAllLines(isManual = false) {
     const lines = canvas.getObjects().filter(obj => obj.type === 'line' && obj.id !== 'grid-line');
     const images = canvas.getObjects().filter(obj => obj.type === 'image' && obj.properties);
 
-    // Строим граф точек пересечения
-    const pointsMap = new Map();
+    // Строим граф соединений
+    const nodes = new Map();
 
-    // Собираем все уникальные точки
+    // Создаем узлы для всех конечных точек линий
     lines.forEach(line => {
       const startKey = `${roundTo5(line.x1)}_${roundTo5(line.y1)}`;
       const endKey = `${roundTo5(line.x2)}_${roundTo5(line.y2)}`;
 
-      if (!pointsMap.has(startKey)) {
-        pointsMap.set(startKey, {
+      if (!nodes.has(startKey)) {
+        nodes.set(startKey, {
           x: roundTo5(line.x1),
           y: roundTo5(line.y1),
-          linesStarting: [],
-          linesEnding: [],
-          objects: [],
-          airVolume: 0,
-          objectResistance: 1
+          incoming: [],
+          outgoing: [],
+          object: null,
+          objectResistance: 1,
+          totalIncoming: 0
         });
       }
 
-      const startPoint = pointsMap.get(startKey);
-      startPoint.linesStarting.push({
-        line: line,
-        airVolume: line.properties?.airVolume || 0,
-        airResistance: line.properties?.airResistance || 1,
-        isStart: true
-      });
-
-      if (!pointsMap.has(endKey)) {
-        pointsMap.set(endKey, {
+      if (!nodes.has(endKey)) {
+        nodes.set(endKey, {
           x: roundTo5(line.x2),
           y: roundTo5(line.y2),
-          linesStarting: [],
-          linesEnding: [],
-          objects: [],
-          airVolume: 0,
-          objectResistance: 1
+          incoming: [],
+          outgoing: [],
+          object: null,
+          objectResistance: 1,
+          totalIncoming: 0
         });
       }
 
-      const endPoint = pointsMap.get(endKey);
-      endPoint.linesEnding.push({
+      nodes.get(startKey).outgoing.push({
         line: line,
-        airVolume: line.properties?.airVolume || 0,
-        airResistance: line.properties?.airResistance || 1,
-        isStart: false
+        resistance: line.properties?.airResistance || 1
+      });
+
+      nodes.get(endKey).incoming.push({
+        line: line,
+        resistance: line.properties?.airResistance || 1
       });
     });
 
-    // Добавляем объекты в точки
-    images.forEach(image => {
-      const center = getObjectCenter(image);
-      let closestPointKey = null;
+    // Связываем объекты с узлами
+    images.forEach(img => {
+      const center = getObjectCenter(img);
+      let closestNode = null;
       let minDistance = Infinity;
 
-      for (const [key, point] of pointsMap.entries()) {
+      for (const [key, node] of nodes.entries()) {
         const distance = roundTo5(Math.sqrt(
-          Math.pow(point.x - center.x, 2) + Math.pow(point.y - center.y, 2)
+          Math.pow(node.x - center.x, 2) + Math.pow(node.y - center.y, 2)
         ));
 
         if (distance < minDistance && distance < 30) {
           minDistance = distance;
-          closestPointKey = key;
+          closestNode = node;
         }
       }
 
-      if (closestPointKey) {
-        const point = pointsMap.get(closestPointKey);
-        point.objects.push({
-          object: image,
-          name: image.properties?.name || 'Объект',
-          airVolume: image.properties?.airVolume || 0,
-          airResistance: image.properties?.airResistance || 1
-        });
-
-        if (image.properties?.airVolume !== undefined && image.properties.airVolume !== null) {
-          point.airVolume = roundTo5(image.properties.airVolume);
-        }
-
-        if (image.properties?.airResistance !== undefined && image.properties.airResistance !== null) {
-          point.objectResistance = roundTo5(image.properties.airResistance);
-        }
+      if (closestNode) {
+        closestNode.object = img;
+        closestNode.objectResistance = roundTo5(img.properties?.airResistance || 1);
       }
     });
 
-    // Функция расчета объема для линий, исходящих из точки
-    function calculateOutgoingLinesAirVolume(point, incomingAirVolume) {
-      const outgoingLines = point.linesStarting;
-
-      if (outgoingLines.length === 0) return;
-
-      if (point.objectResistance !== 1 && point.objectResistance > 0) {
-        const volumeAfterObject = roundTo5(incomingAirVolume / point.objectResistance);
-
-        if (outgoingLines.length === 1) {
-          outgoingLines[0].line.properties.airVolume = volumeAfterObject;
-          outgoingLines[0].line.set('properties', outgoingLines[0].line.properties);
-        } else {
-          let totalConductivity = 0;
-          outgoingLines.forEach(lineInfo => {
-            if (lineInfo.line.properties?.airResistance && lineInfo.line.properties.airResistance > 0) {
-              totalConductivity += 1 / lineInfo.line.properties.airResistance;
-            }
-          });
-
-          if (totalConductivity > 0) {
-            outgoingLines.forEach(lineInfo => {
-              if (lineInfo.line.properties?.airResistance && lineInfo.line.properties.airResistance > 0) {
-                const lineConductivity = 1 / lineInfo.line.properties.airResistance;
-                const lineVolume = roundTo5(volumeAfterObject * (lineConductivity / totalConductivity));
-                lineInfo.line.properties.airVolume = lineVolume;
-                lineInfo.line.set('properties', lineInfo.line.properties);
-              }
-            });
-          }
-        }
-      } else {
-        if (outgoingLines.length === 1) {
-          outgoingLines[0].line.properties.airVolume = incomingAirVolume;
-          outgoingLines[0].line.set('properties', outgoingLines[0].line.properties);
-        } else {
-          let totalConductivity = 0;
-          outgoingLines.forEach(lineInfo => {
-            if (lineInfo.line.properties?.airResistance && lineInfo.line.properties.airResistance > 0) {
-              totalConductivity += 1 / lineInfo.line.properties.airResistance;
-            }
-          });
-
-          if (totalConductivity > 0) {
-            outgoingLines.forEach(lineInfo => {
-              if (lineInfo.line.properties?.airResistance && lineInfo.line.properties.airResistance > 0) {
-                const lineConductivity = 1 / lineInfo.line.properties.airResistance;
-                const lineVolume = roundTo5(incomingAirVolume * (lineConductivity / totalConductivity));
-                lineInfo.line.properties.airVolume = lineVolume;
-                lineInfo.line.set('properties', lineInfo.line.properties);
-              }
-            });
-          }
-        }
-      }
-    }
-
-    // Обрабатываем точки с объектами (источники воздуха)
-    for (const [key, point] of pointsMap.entries()) {
-      if (point.objects.length > 0 && point.airVolume > 0) {
-        const outgoingLines = point.linesStarting;
-
-        if (outgoingLines.length === 1) {
-          outgoingLines[0].line.properties.airVolume = point.airVolume;
-          outgoingLines[0].line.set('properties', outgoingLines[0].line.properties);
-        } else if (outgoingLines.length > 1) {
-          let totalConductivity = 0;
-          outgoingLines.forEach(lineInfo => {
-            if (lineInfo.line.properties?.airResistance && lineInfo.line.properties.airResistance > 0) {
-              totalConductivity += 1 / lineInfo.line.properties.airResistance;
-            }
-          });
-
-          if (totalConductivity > 0) {
-            outgoingLines.forEach(lineInfo => {
-              if (lineInfo.line.properties?.airResistance && lineInfo.line.properties.airResistance > 0) {
-                const lineConductivity = 1 / lineInfo.line.properties.airResistance;
-                const lineVolume = roundTo5(point.airVolume * (lineConductivity / totalConductivity));
-                lineInfo.line.properties.airVolume = lineVolume;
-                lineInfo.line.set('properties', lineInfo.line.properties);
-              }
-            });
-          }
-        }
-      }
-    }
-
-    // Обрабатываем остальные точки (распространение воздуха)
-    let changed = true;
-    let iterations = 0;
-    const maxIterations = 100;
-
-    while (changed && iterations < maxIterations) {
-      changed = false;
-      iterations++;
-
-      for (const [key, point] of pointsMap.entries()) {
-        if (point.objects.length > 0 && point.airVolume > 0) {
-          continue;
-        }
-
-        let totalIncomingAir = 0;
-        point.linesEnding.forEach(lineInfo => {
-          if (lineInfo.line.properties?.airVolume !== undefined) {
-            totalIncomingAir += lineInfo.line.properties.airVolume;
-          }
+    // Находим все источники (объекты с объемом воздуха)
+    const sources = [];
+    for (const [key, node] of nodes.entries()) {
+      if (node.object && node.object.properties?.airVolume !== undefined && node.object.properties.airVolume > 0) {
+        sources.push({
+          node: node,
+          volume: roundTo5(node.object.properties.airVolume)
         });
-
-        if (totalIncomingAir > 0 && point.linesStarting.length > 0) {
-          if (Math.abs(totalIncomingAir - point.airVolume) > 0.0001) {
-            changed = true;
-            point.airVolume = roundTo5(totalIncomingAir);
-            calculateOutgoingLinesAirVolume(point, totalIncomingAir);
-          }
-        }
       }
     }
+
+    // Обнуляем все текущие значения
+    lines.forEach(line => {
+      if (line.properties) {
+        line.properties.airVolume = 0;
+        line.set('properties', line.properties);
+      }
+    });
+
+    // Рассчитываем распространение от каждого источника
+    const processedEdges = new Set();
+
+    function calculateFlow(node, incomingVolume, visitedNodes = new Set()) {
+      if (visitedNodes.has(node)) return;
+      visitedNodes.add(node);
+
+      const volumeAfterObject = roundTo5(incomingVolume / node.objectResistance);
+
+      // Если нет исходящих линий - завершаем
+      if (node.outgoing.length === 0) return;
+
+      // Рассчитываем суммарную проводимость
+      let totalConductivity = 0;
+      node.outgoing.forEach(edge => {
+        if (edge.resistance > 0) {
+          edge.conductivity = roundTo5(1 / edge.resistance);
+          totalConductivity += edge.conductivity;
+        }
+      });
+
+      // Распределяем поток по исходящим линиям
+      node.outgoing.forEach(edge => {
+        if (edge.resistance > 0 && totalConductivity > 0) {
+          const edgeKey = `${edge.line.id}_${edge.line.x1}_${edge.line.y1}_${edge.line.x2}_${edge.line.y2}`;
+          if (processedEdges.has(edgeKey)) return;
+
+          const lineVolume = roundTo5(volumeAfterObject * (edge.conductivity / totalConductivity));
+
+          // Обновляем объем в линии
+          if (edge.line.properties) {
+            edge.line.properties.airVolume = roundTo5((edge.line.properties.airVolume || 0) + lineVolume);
+            edge.line.set('properties', edge.line.properties);
+          }
+
+          processedEdges.add(edgeKey);
+
+          // Находим конечный узел этой линии
+          const endKey = `${roundTo5(edge.line.x2)}_${roundTo5(edge.line.y2)}`;
+          const endNode = nodes.get(endKey);
+
+          if (endNode && endNode !== node) {
+            // Передаем объем в следующий узел
+            calculateFlow(endNode, lineVolume, new Set(visitedNodes));
+          }
+        }
+      });
+    }
+
+    // Запускаем расчет от каждого источника
+    sources.forEach(source => {
+      calculateFlow(source.node, source.volume);
+    });
 
     // Обновляем тексты для всех линий
     let updatedCount = 0;
@@ -1003,22 +766,6 @@ function calculateAirVolumesForAllLines(isManual = false) {
         }
       } catch (err) {
         console.warn('Ошибка при обновлении текста линии:', err, line);
-      }
-    });
-
-    // Проверяем корректность расчетов
-    let totalObjectAir = 0;
-    let totalLineAir = 0;
-
-    images.forEach(image => {
-      if (image.properties?.airVolume !== undefined) {
-        totalObjectAir += image.properties.airVolume;
-      }
-    });
-
-    lines.forEach(line => {
-      if (line.properties?.airVolume !== undefined) {
-        totalLineAir += line.properties.airVolume;
       }
     });
 
@@ -1038,8 +785,263 @@ function calculateAirVolumesForAllLines(isManual = false) {
     showNotification('Ошибка при расчете объемов воздуха: ' + error.message, 'error');
     return false;
   } finally {
-    isCalculatingAirVolumes = false;
+    setTimeout(() => {
+      isCalculatingAirVolumes = false;
+      isDrawingImage = false;
+    }, 100);
   }
+}
+
+// ==================== ФУНКЦИИ ДЛЯ КНОПОК ====================
+function exportLinePropertiesToCSV() {
+  const lines = canvas.getObjects().filter(obj => obj.type === 'line' && obj.id !== 'grid-line' && !obj.isPreview);
+
+  if (lines.length === 0) {
+    showNotification('Нет линий для экспорта!', 'error');
+    return;
+  }
+
+  let csvContent = "data:text/csv;charset=utf-8,";
+  csvContent += "ID,Название,Длина (px),Длина прохода (м),Коэф. шероховатости,Площадь сечения (м²),Периметр (м),Сопротивление (R),Объем воздуха (м³/с)\n";
+
+  lines.forEach(line => {
+    const props = line.properties || {};
+    const length = roundTo5(Math.sqrt(Math.pow(line.x2 - line.x1, 2) + Math.pow(line.y2 - line.y1, 2)));
+
+    const row = [
+      line.id || 'N/A',
+      `"${props.name || 'Без названия'}"`,
+      formatTo5(length),
+      formatTo5(props.passageLength || 0),
+      formatTo5(props.roughnessCoefficient || 0),
+      formatTo5(props.crossSectionalArea || 0),
+      formatTo5(props.perimeter || 0),
+      formatTo5(props.airResistance || 0),
+      formatTo5(props.airVolume || 0)
+    ].join(',');
+
+    csvContent += row + "\n";
+  });
+
+  const encodedUri = encodeURI(csvContent);
+  const link = document.createElement("a");
+  link.setAttribute("href", encodedUri);
+  link.setAttribute("download", `линии_${new Date().toISOString().slice(0, 10)}.csv`);
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+
+  showNotification(`Экспортировано ${lines.length} линий в CSV`, 'success');
+}
+
+function calculateAllPropertiesForAllLines() {
+  const lines = canvas.getObjects().filter(obj => obj.type === 'line' && obj.id !== 'grid-line' && !obj.isPreview);
+  let updatedCount = 0;
+
+  lines.forEach(line => {
+    try {
+      normalizeLineProperties(line);
+      calculateAllLineProperties(line);
+      updatedCount++;
+    } catch (err) {
+      console.warn('Ошибка при расчете свойств линии:', err, line);
+    }
+  });
+
+  updateAllAirVolumeTexts();
+  canvas.renderAll();
+  updatePropertiesPanel();
+
+  if (updatedCount > 0) {
+    showNotification(`Пересчитаны свойства для ${updatedCount} линий`, 'success');
+  } else {
+    showNotification('Линии для пересчета не найдены', 'info');
+  }
+}
+
+function showAirVolumeReport() {
+  const lines = canvas.getObjects().filter(obj => obj.type === 'line' && obj.id !== 'grid-line' && !obj.isPreview);
+  const images = canvas.getObjects().filter(obj => obj.type === 'image' && obj.properties);
+
+  if (lines.length === 0 && images.length === 0) {
+    showNotification('Нет объектов для отчета!', 'error');
+    return;
+  }
+
+  const modal = document.getElementById('airVolumeReportModal');
+  if (!modal) {
+    createAirVolumeReportModal();
+  }
+
+  let reportHTML = '<div class="report-content">';
+
+  // Сводная информация
+  reportHTML += '<div class="report-summary">';
+  reportHTML += `<h3>📊 Отчет по объемам воздуха</h3>`;
+  reportHTML += `<p><strong>Всего линий:</strong> ${lines.length}</p>`;
+  reportHTML += `<p><strong>Всего объектов:</strong> ${images.length}</p>`;
+
+  let totalAirVolume = 0;
+  lines.forEach(line => {
+    if (line.properties?.airVolume) {
+      totalAirVolume += line.properties.airVolume;
+    }
+  });
+
+  reportHTML += `<p><strong>Суммарный объем воздуха:</strong> ${formatTo5(totalAirVolume)} м³/с</p>`;
+  reportHTML += '</div>';
+
+  // Детали по линиям
+  if (lines.length > 0) {
+    reportHTML += '<div class="report-section">';
+    reportHTML += '<h4>📏 Линии</h4>';
+    reportHTML += '<table class="report-table">';
+    reportHTML += '<thead><tr><th>Название</th><th>Длина (px)</th><th>Сопротивление (R)</th><th>Объем воздуха (м³/с)</th></tr></thead>';
+    reportHTML += '<tbody>';
+
+    lines.forEach(line => {
+      const props = line.properties || {};
+      const length = roundTo5(Math.sqrt(Math.pow(line.x2 - line.x1, 2) + Math.pow(line.y2 - line.y1, 2)));
+
+      reportHTML += `<tr>
+        <td>${props.name || 'Без названия'}</td>
+        <td>${formatTo5(length)}</td>
+        <td>${formatTo5(props.airResistance || 0)}</td>
+        <td><strong>${formatTo5(props.airVolume || 0)}</strong></td>
+      </tr>`;
+    });
+
+    reportHTML += '</tbody></table>';
+    reportHTML += '</div>';
+  }
+
+  // Детали по объектам
+  if (images.length > 0) {
+    reportHTML += '<div class="report-section">';
+    reportHTML += '<h4>🏭 Объекты</h4>';
+    reportHTML += '<table class="report-table">';
+    reportHTML += '<thead><tr><th>Название</th><th>Тип</th><th>Объем воздуха (м³/с)</th><th>Сопротивление</th></tr></thead>';
+    reportHTML += '<tbody>';
+
+    images.forEach(img => {
+      const props = img.properties || {};
+      reportHTML += `<tr>
+        <td>${props.name || 'Объект'}</td>
+        <td>${props.type || 'default'}</td>
+        <td>${formatTo5(props.airVolume || 0)}</td>
+        <td>${formatTo5(props.airResistance || 0)}</td>
+      </tr>`;
+    });
+
+    reportHTML += '</tbody></table>';
+    reportHTML += '</div>';
+  }
+
+  reportHTML += '</div>';
+
+  const modalContent = document.getElementById('airVolumeReportContent');
+  if (modalContent) {
+    modalContent.innerHTML = reportHTML;
+  }
+
+  document.getElementById('airVolumeReportModal').style.display = 'flex';
+}
+
+function closeAirVolumeReport() {
+  document.getElementById('airVolumeReportModal').style.display = 'none';
+}
+
+function createAirVolumeReportModal() {
+  const modalHTML = `
+    <div id="airVolumeReportModal" class="modal">
+      <div class="modal-content" style="max-width: 800px; max-height: 80vh;">
+        <div class="modal-header">
+          <h3>📊 Отчет по объемам воздуха</h3>
+          <button class="close-btn" onclick="closeAirVolumeReport()">×</button>
+        </div>
+        <div id="airVolumeReportContent" class="modal-body" style="overflow-y: auto;">
+          <!-- Контент отчета будет здесь -->
+        </div>
+        <div class="modal-footer">
+          <button onclick="exportAirVolumeReportToCSV()" class="btn btn-primary">
+            <span>📥</span> Экспорт в CSV
+          </button>
+          <button onclick="closeAirVolumeReport()" class="btn btn-secondary">Закрыть</button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  document.body.insertAdjacentHTML('beforeend', modalHTML);
+}
+
+function exportAirVolumeReportToCSV() {
+  const lines = canvas.getObjects().filter(obj => obj.type === 'line' && obj.id !== 'grid-line' && !obj.isPreview);
+  const images = canvas.getObjects().filter(obj => obj.type === 'image' && obj.properties);
+
+  let csvContent = "data:text/csv;charset=utf-8,";
+
+  // Заголовок отчета
+  csvContent += "ОТЧЕТ ПО ОБЪЕМАМ ВОЗДУХА\n";
+  csvContent += `Дата генерации: ${new Date().toLocaleString()}\n`;
+  csvContent += `Всего линий: ${lines.length}\n`;
+  csvContent += `Всего объектов: ${images.length}\n\n`;
+
+  // Раздел линий
+  csvContent += "ЛИНИИ\n";
+  csvContent += "Название,Длина (px),Длина прохода (м),Коэф. шероховатости,Площадь сечения (м²),Периметр (м),Сопротивление (R),Объем воздуха (м³/с),X1,Y1,X2,Y2\n";
+
+  lines.forEach(line => {
+    const props = line.properties || {};
+    const length = roundTo5(Math.sqrt(Math.pow(line.x2 - line.x1, 2) + Math.pow(line.y2 - line.y1, 2)));
+
+    const row = [
+      `"${props.name || 'Без названия'}"`,
+      formatTo5(length),
+      formatTo5(props.passageLength || 0),
+      formatTo5(props.roughnessCoefficient || 0),
+      formatTo5(props.crossSectionalArea || 0),
+      formatTo5(props.perimeter || 0),
+      formatTo5(props.airResistance || 0),
+      formatTo5(props.airVolume || 0),
+      formatTo5(line.x1),
+      formatTo5(line.y1),
+      formatTo5(line.x2),
+      formatTo5(line.y2)
+    ].join(',');
+
+    csvContent += row + "\n";
+  });
+
+  // Раздел объектов
+  csvContent += "\n\nОБЪЕКТЫ\n";
+  csvContent += "Название,Тип,Объем воздуха (м³/с),Сопротивление,X,Y,Ширина,Высота\n";
+
+  images.forEach(img => {
+    const props = img.properties || {};
+    const row = [
+      `"${props.name || 'Объект'}"`,
+      props.type || 'default',
+      formatTo5(props.airVolume || 0),
+      formatTo5(props.airResistance || 0),
+      formatTo5(img.left || 0),
+      formatTo5(img.top || 0),
+      formatTo5(img.width * img.scaleX || 0),
+      formatTo5(img.height * img.scaleY || 0)
+    ].join(',');
+
+    csvContent += row + "\n";
+  });
+
+  const encodedUri = encodeURI(csvContent);
+  const link = document.createElement("a");
+  link.setAttribute("href", encodedUri);
+  link.setAttribute("download", `отчет_воздух_${new Date().toISOString().slice(0, 10)}.csv`);
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+
+  showNotification('Отчет экспортирован в CSV', 'success');
 }
 
 // ==================== УПРАВЛЕНИЕ ОБЪЕКТАМИ ====================
@@ -1177,20 +1179,6 @@ function setupCanvasEvents() {
   canvas.on('object:removed', handleObjectRemoved);
 }
 
-function setupNodeMouseEvents() {
-  document.addEventListener('mousemove', function (e) {
-    if (isDraggingNode) {
-      updateNodeDrag(e.clientX, e.clientY);
-    }
-  });
-
-  document.addEventListener('mouseup', function () {
-    if (isDraggingNode) {
-      endNodeDrag();
-    }
-  });
-}
-
 function findLineAtPoint(point, threshold = APP_CONFIG.SNAP_RADIUS) {
   const lines = canvas.getObjects().filter(obj => obj.type === 'line' && obj.id !== 'grid-line' && !obj.isPreview);
   let closestLine = null;
@@ -1218,139 +1206,33 @@ function findLineAtPoint(point, threshold = APP_CONFIG.SNAP_RADIUS) {
 }
 
 function handleCanvasMouseDown(options) {
-  if (isProcessingEvents) return;
+  if (isProcessingEvents || isCalculatingAirVolumes) return;
+
+  if (isCalculatingAirVolumes) {
+    showNotification('Дождитесь завершения расчета!', 'warning');
+    return;
+  }
+
   isProcessingEvents = true;
 
   try {
     const pointer = canvas.getPointer(options.e);
 
-    if (isDraggingNode) {
-      options.e.preventDefault();
-      return;
-    }
-
     if (options.e.shiftKey && currentImageData) {
-      addImageAtPosition(pointer.x, pointer.y);
+      if (isCalculatingAirVolumes) {
+        showNotification('Дождитесь завершения расчета перед добавлением объектов!', 'warning');
+        return;
+      }
+
+      setTimeout(() => {
+        addImageAtPosition(pointer.x, pointer.y);
+      }, 10);
       return;
     }
 
     if (isDrawingLine) {
-      if (!lineStartPoint) {
-        let snappedX, snappedY;
-        let startPointFromObject = null;
-
-        if (altKeyPressed && options.target) {
-          const targetObject = options.target;
-          const objectEdgePoint = findClosestPointOnObjectEdge(targetObject, pointer);
-          if (objectEdgePoint) {
-            startPointFromObject = {
-              x: roundTo5(objectEdgePoint.x),
-              y: roundTo5(objectEdgePoint.y),
-              object: targetObject,
-              edgePoint: true
-            };
-            snappedX = roundTo5(objectEdgePoint.x);
-            snappedY = roundTo5(objectEdgePoint.y);
-          }
-        }
-
-        if (!startPointFromObject) {
-          snappedX = roundTo5(snapToGrid(pointer.x, APP_CONFIG.GRID_SIZE));
-          snappedY = roundTo5(snapToGrid(pointer.y, APP_CONFIG.GRID_SIZE));
-        }
-
-        if (!altKeyPressed) {
-          const lineAtPoint = findLineAtPoint(pointer);
-          if (lineAtPoint && !lineAtPoint.isEnd) {
-            const splitResult = splitLineAtPoint(lineAtPoint.line, lineAtPoint.point);
-            if (splitResult) {
-              saveToUndoStack();
-              canvas.remove(lineAtPoint.line);
-              removeAirVolumeText(lineAtPoint.line);
-              canvas.add(splitResult.line1);
-              canvas.add(splitResult.line2);
-              createOrUpdateAirVolumeText(splitResult.line1);
-              createOrUpdateAirVolumeText(splitResult.line2);
-
-              lineStartPoint = {
-                x: lineAtPoint.point.x,
-                y: lineAtPoint.point.y,
-                lineSplit: true
-              };
-
-              previewLine = new fabric.Line([lineStartPoint.x, lineStartPoint.y, snappedX, snappedY], {
-                stroke: APP_CONFIG.DEFAULT_LINE_COLOR,
-                strokeWidth: 2,
-                strokeDashArray: [5, 5],
-                selectable: false,
-                evented: false,
-                id: 'preview-line',
-                isPreview: true
-              });
-
-              canvas.add(previewLine);
-
-              // Отложенное обновление соединений
-              setTimeout(() => {
-                updateLineConnections();
-                updateAllAirVolumeTexts();
-              }, 50);
-
-              return;
-            } else {
-              lineStartPoint = {
-                x: snappedX,
-                y: snappedY,
-                ...(startPointFromObject || {})
-              };
-            }
-          } else if (lineAtPoint && lineAtPoint.isEnd) {
-            lineStartPoint = {
-              x: lineAtPoint.point.x,
-              y: lineAtPoint.point.y,
-              ...(startPointFromObject || {})
-            };
-          } else {
-            lineStartPoint = {
-              x: snappedX,
-              y: snappedY,
-              ...(startPointFromObject || {})
-            };
-          }
-        } else {
-          lineStartPoint = {
-            x: snappedX,
-            y: snappedY,
-            ...(startPointFromObject || {})
-          };
-        }
-
-        previewLine = new fabric.Line([lineStartPoint.x, lineStartPoint.y, snappedX, snappedY], {
-          stroke: APP_CONFIG.DEFAULT_LINE_COLOR,
-          strokeWidth: 2,
-          strokeDashArray: [5, 5],
-          selectable: false,
-          evented: false,
-          id: 'preview-line',
-          isPreview: true
-        });
-
-        canvas.add(previewLine);
-        return;
-      } else {
-        handleLineDrawing(options, pointer);
-        return;
-      }
-    }
-
-    const target = options.target;
-    if (target && target.type === 'line') {
-      const nearestNode = getNearestNode(pointer.x, pointer.y);
-      if (nearestNode && nearestNode.distance < APP_CONFIG.NODE_THRESHOLD * 2) {
-        options.e.preventDefault();
-        startNodeDrag(nearestNode.key, options.e.clientX, options.e.clientY);
-        return;
-      }
+      handleLineDrawingStart(options, pointer);
+      return;
     }
 
     if (options.e.button === 2) {
@@ -1363,7 +1245,113 @@ function handleCanvasMouseDown(options) {
   }
 }
 
-function handleLineDrawing(options, pointer) {
+function handleLineDrawingStart(options, pointer) {
+  if (!lineStartPoint) {
+    let snappedX, snappedY;
+    let startPointFromObject = null;
+
+    if (altKeyPressed && options.target) {
+      const targetObject = options.target;
+      const objectEdgePoint = findClosestPointOnObjectEdge(targetObject, pointer);
+      if (objectEdgePoint) {
+        startPointFromObject = {
+          x: roundTo5(objectEdgePoint.x),
+          y: roundTo5(objectEdgePoint.y),
+          object: targetObject,
+          edgePoint: true
+        };
+        snappedX = roundTo5(objectEdgePoint.x);
+        snappedY = roundTo5(objectEdgePoint.y);
+      }
+    }
+
+    if (!startPointFromObject) {
+      snappedX = roundTo5(snapToGrid(pointer.x, APP_CONFIG.GRID_SIZE));
+      snappedY = roundTo5(snapToGrid(pointer.y, APP_CONFIG.GRID_SIZE));
+    }
+
+    if (!altKeyPressed) {
+      const lineAtPoint = findLineAtPoint(pointer);
+      if (lineAtPoint && !lineAtPoint.isEnd) {
+        const splitResult = splitLineAtPoint(lineAtPoint.line, lineAtPoint.point);
+        if (splitResult) {
+          saveToUndoStack();
+          canvas.remove(lineAtPoint.line);
+          removeAirVolumeText(lineAtPoint.line);
+          canvas.add(splitResult.line1);
+          canvas.add(splitResult.line2);
+          createOrUpdateAirVolumeText(splitResult.line1);
+          createOrUpdateAirVolumeText(splitResult.line2);
+
+          lineStartPoint = {
+            x: lineAtPoint.point.x,
+            y: lineAtPoint.point.y,
+            lineSplit: true
+          };
+
+          previewLine = new fabric.Line([lineStartPoint.x, lineStartPoint.y, snappedX, snappedY], {
+            stroke: APP_CONFIG.DEFAULT_LINE_COLOR,
+            strokeWidth: 2,
+            strokeDashArray: [5, 5],
+            selectable: false,
+            evented: false,
+            id: 'preview-line',
+            isPreview: true
+          });
+
+          canvas.add(previewLine);
+
+          setTimeout(() => {
+            updateConnectionGraph();
+            updateAllAirVolumeTexts();
+          }, 50);
+
+          return;
+        } else {
+          lineStartPoint = {
+            x: snappedX,
+            y: snappedY,
+            ...(startPointFromObject || {})
+          };
+        }
+      } else if (lineAtPoint && lineAtPoint.isEnd) {
+        lineStartPoint = {
+          x: lineAtPoint.point.x,
+          y: lineAtPoint.point.y,
+          ...(startPointFromObject || {})
+        };
+      } else {
+        lineStartPoint = {
+          x: snappedX,
+          y: snappedY,
+          ...(startPointFromObject || {})
+        };
+      }
+    } else {
+      lineStartPoint = {
+        x: snappedX,
+        y: snappedY,
+        ...(startPointFromObject || {})
+      };
+    }
+
+    previewLine = new fabric.Line([lineStartPoint.x, lineStartPoint.y, snappedX, snappedY], {
+      stroke: APP_CONFIG.DEFAULT_LINE_COLOR,
+      strokeWidth: 2,
+      strokeDashArray: [5, 5],
+      selectable: false,
+      evented: false,
+      id: 'preview-line',
+      isPreview: true
+    });
+
+    canvas.add(previewLine);
+  } else {
+    handleLineDrawingEnd(options, pointer);
+  }
+}
+
+function handleLineDrawingEnd(options, pointer) {
   let snappedX, snappedY;
   let endPointFromObject = null;
 
@@ -1399,11 +1387,6 @@ function handleLineDrawing(options, pointer) {
         canvas.add(splitResult.line2);
         createOrUpdateAirVolumeText(splitResult.line1);
         createOrUpdateAirVolumeText(splitResult.line2);
-
-        // Отложенное обновление
-        setTimeout(() => {
-          updateLineConnections();
-        }, 50);
       }
     }
   }
@@ -1417,7 +1400,12 @@ function handleLineDrawing(options, pointer) {
   const crossSectionalArea = roundTo5(parseFloat(document.getElementById('propertyCrossSectionalArea')?.value) || 10);
   const perimeter = calculateLinePerimeter(crossSectionalArea);
   const airResistance = calculateAirResistance(roughnessCoefficient, perimeter, passageLength, crossSectionalArea);
-  const initialAirVolume = 0;
+
+  let initialAirVolume = 0;
+  if (lineStartPoint.object && lineStartPoint.object.properties &&
+    lineStartPoint.object.properties.airVolume !== undefined) {
+    initialAirVolume = roundTo5(lineStartPoint.object.properties.airVolume);
+  }
 
   const finalLine = new fabric.Line([lineStartPoint.x, lineStartPoint.y, snappedX, snappedY], {
     stroke: APP_CONFIG.DEFAULT_LINE_COLOR,
@@ -1465,9 +1453,8 @@ function handleLineDrawing(options, pointer) {
 
   calculateAllLineProperties(finalLine);
 
-  // Отложенное обновление соединений
   setTimeout(() => {
-    updateLineConnections();
+    updateConnectionGraph();
     updateAllAirVolumeTexts();
   }, 100);
 
@@ -1546,14 +1533,10 @@ function handleCanvasDoubleClick(options) {
 function handleObjectAdded(e) {
   if (e.target && e.target.id !== 'intersection-point' &&
     e.target.id !== 'intersection-point-label' &&
-    e.target.id !== 'air-volume-text' &&
-    e.target.id !== 'node-marker' &&
-    e.target.id !== 'node-marker-text') {
+    e.target.id !== 'air-volume-text') {
 
-    // Отложенное обновление вместо немедленного
     setTimeout(() => {
       bringIntersectionPointsToFront();
-      bringNodeMarkersToFront();
       updateAllAirVolumeTexts();
     }, 100);
   }
@@ -1566,9 +1549,8 @@ function handleObjectModified(e) {
     }
     createOrUpdateAirVolumeText(e.target);
 
-    // Отложенное обновление соединений
     setTimeout(() => {
-      updateLineConnections();
+      updateConnectionGraph();
     }, 100);
   }
 }
@@ -1578,9 +1560,8 @@ function handleObjectRemoved(e) {
     removeAirVolumeText(e.target);
   }
 
-  // Отложенное обновление соединений
   setTimeout(() => {
-    updateLineConnections();
+    updateConnectionGraph();
   }, 100);
 }
 
@@ -1760,6 +1741,13 @@ function addImageAtPosition(x, y) {
     return;
   }
 
+  if (isCalculatingAirVolumes) {
+    showNotification('Дождитесь завершения расчета перед добавлением изображений!', 'warning');
+    return;
+  }
+
+  isDrawingImage = true;
+
   fabric.Image.fromURL(currentImageData.path, function (img) {
     const originalWidth = img.width || 100;
     const originalHeight = img.height || 100;
@@ -1806,6 +1794,10 @@ function addImageAtPosition(x, y) {
     updatePropertiesPanel();
     updateStatus();
     showNotification(`${currentImageData.name} добавлен`, 'success');
+
+    setTimeout(() => {
+      isDrawingImage = false;
+    }, 100);
 
   }, {crossOrigin: 'anonymous'});
 }
@@ -1892,9 +1884,8 @@ function splitAllLines() {
     }
   });
 
-  // Отложенное обновление
   setTimeout(() => {
-    updateLineConnections();
+    updateConnectionGraph();
     updateAllAirVolumeTexts();
   }, 100);
 
@@ -1976,9 +1967,8 @@ function splitAllLinesAtObjectCenters() {
     }
   });
 
-  // Отложенное обновление
   setTimeout(() => {
-    updateLineConnections();
+    updateConnectionGraph();
     clearIntersectionPoints();
     const intersections = findAllIntersections();
     intersections.forEach((inter, idx) => createIntersectionPoint(inter.x, inter.y, idx, inter));
@@ -2095,8 +2085,18 @@ function splitLineAtPoint(line, point) {
   const airResistance1 = calculateAirResistance(props.roughnessCoefficient || 0.015, perimeter1, passageLength1, crossSectionalArea1);
   const airResistance2 = calculateAirResistance(props.roughnessCoefficient || 0.015, perimeter2, passageLength2, crossSectionalArea2);
 
-  const airVolume1 = 0;
-  const airVolume2 = 0;
+  let airVolume1 = 0;
+  let airVolume2 = 0;
+
+  if (line.properties && line.properties.airVolume !== undefined) {
+    if (line.lineStartsFromObject && line.startObject) {
+      airVolume1 = roundTo5(line.properties.airVolume);
+      airVolume2 = 0;
+    } else {
+      airVolume1 = roundTo5(line.properties.airVolume * proportion1);
+      airVolume2 = roundTo5(line.properties.airVolume * proportion2);
+    }
+  }
 
   const line1Id = 'line_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
   const line2Id = 'line_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
@@ -2192,9 +2192,8 @@ function splitLinesAtImagePosition(image) {
     }
   });
 
-  // Отложенное обновление
   setTimeout(() => {
-    updateLineConnections();
+    updateConnectionGraph();
     updateAllAirVolumeTexts();
   }, 100);
 
@@ -2203,6 +2202,8 @@ function splitLinesAtImagePosition(image) {
   if (splitCount > 0) showNotification(`Разделено ${splitCount} линий по центру объектов`, 'success');
 }
 
+// ==================== ТОЧКИ ПЕРЕСЕЧЕНИЯ ====================
+// ==================== ТОЧКИ ПЕРЕСЕЧЕНИЯ ====================
 // ==================== ТОЧКИ ПЕРЕСЕЧЕНИЯ ====================
 function createIntersectionPoint(x, y, index, intersectionData, customColor = '#ff4757') {
   const circle = new fabric.Circle({
@@ -2241,7 +2242,21 @@ function createIntersectionPoint(x, y, index, intersectionData, customColor = '#
     if (e.e.button === 0) {
       e.e.preventDefault();
       e.e.stopPropagation();
-      showIntersectionPointInfo(index);
+
+      // Всегда собираем свежую информацию о точке
+      const pointInfo = collectPointInfo(x, y);
+
+      // Добавляем дополнительные данные из pointData
+      if (this.pointData) {
+        if (this.pointData.type) pointInfo.type = this.pointData.type;
+        if (this.pointData.line1) pointInfo.line1 = this.pointData.line1;
+        if (this.pointData.line2) pointInfo.line2 = this.pointData.line2;
+        if (this.pointData.object) pointInfo.object = this.pointData.object;
+        if (this.pointData.edgePoint) pointInfo.edgePoint = this.pointData.edgePoint;
+      }
+
+      console.log('Открываем модальное окно для точки:', pointInfo);
+      showIntersectionPointInfoModal(pointInfo);
       return false;
     }
   });
@@ -2253,6 +2268,324 @@ function createIntersectionPoint(x, y, index, intersectionData, customColor = '#
   intersectionVisuals.push({circle, text});
   canvas.renderAll();
   return circle;
+}
+
+function collectPointInfo(x, y) {
+  const lines = canvas.getObjects().filter(obj => obj.type === 'line' && obj.id !== 'grid-line' && !obj.isPreview);
+  const images = canvas.getObjects().filter(obj => obj.type === 'image');
+
+  const linesInPoint = [];
+  const objectsInPoint = [];
+
+  // Ищем все линии, которые начинаются или заканчиваются в этой точке
+  lines.forEach(line => {
+    // Проверяем начало линии
+    const distanceToStart = roundTo5(Math.sqrt(
+      Math.pow(x - line.x1, 2) + Math.pow(y - line.y1, 2)
+    ));
+
+    // Проверяем конец линии
+    const distanceToEnd = roundTo5(Math.sqrt(
+      Math.pow(x - line.x2, 2) + Math.pow(y - line.y2, 2)
+    ));
+
+    const threshold = 8; // Увеличили допуск до 8 пикселей
+
+    if (distanceToStart < threshold) {
+      linesInPoint.push({
+        line: line,
+        isStart: true,
+        distance: distanceToStart,
+        airVolume: line.properties?.airVolume || 0,
+        airResistance: line.properties?.airResistance || 0,
+        name: line.properties?.name || 'Линия'
+      });
+    } else if (distanceToEnd < threshold) {
+      linesInPoint.push({
+        line: line,
+        isStart: false,
+        distance: distanceToEnd,
+        airVolume: line.properties?.airVolume || 0,
+        airResistance: line.properties?.airResistance || 0,
+        name: line.properties?.name || 'Линия'
+      });
+    }
+  });
+
+  // Ищем объекты в этой точке
+  images.forEach(image => {
+    const center = getObjectCenter(image);
+    const distance = roundTo5(Math.sqrt(
+      Math.pow(x - center.x, 2) + Math.pow(y - center.y, 2)
+    ));
+
+    // Проверяем, находится ли точка внутри объекта
+    const rect = getObjectRect(image);
+    const isInside = x >= rect.left && x <= rect.right &&
+      y >= rect.top && y <= rect.bottom;
+
+    if (distance < 35 || isInside) { // Увеличили радиус поиска до 35
+      objectsInPoint.push({
+        object: image,
+        name: image.properties?.name || 'Объект',
+        type: image.properties?.type || 'неизвестен',
+        airVolume: image.properties?.airVolume || 0,
+        airResistance: image.properties?.airResistance || 0,
+        distance: distance,
+        isInside: isInside
+      });
+    }
+  });
+
+  return {
+    x: x,
+    y: y,
+    linesInPoint: linesInPoint,
+    objectsInPoint: objectsInPoint,
+    totalLines: linesInPoint.length,
+    totalObjects: objectsInPoint.length,
+    linesStarting: linesInPoint.filter(l => l.isStart).length,
+    linesEnding: linesInPoint.filter(l => !l.isStart).length
+  };
+}
+
+function initializeIntersectionPointModal() {
+  // Создаем модальное окно при инициализации
+  createIntersectionPointModal();
+  console.log('Модальное окно для точек пересечения инициализировано');
+}
+
+function createIntersectionPointModal() {
+  // Убедимся, что модальное окно не существует
+  const oldModal = document.getElementById('intersectionPointModal');
+  if (oldModal) {
+    oldModal.remove();
+  }
+
+  const modalHTML = `
+    <div id="intersectionPointModal" class="modal">
+      <div class="modal-content" style="max-width: 600px; max-height: 80vh;">
+        <div class="modal-header">
+          <h3>🔍 Информация о точке пересечения</h3>
+          <button class="close-btn" onclick="closeIntersectionPointModal()">×</button>
+        </div>
+        <div id="intersectionPointInfoContent" class="modal-body" style="overflow-y: auto;">
+          <div class="loading">
+            <p>Загрузка информации о точке...</p>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button onclick="closeIntersectionPointModal()" class="btn btn-secondary">Закрыть</button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  document.body.insertAdjacentHTML('beforeend', modalHTML);
+
+  // Добавляем стили, если их еще нет
+  if (!document.querySelector('#intersection-point-styles')) {
+    const style = document.createElement('style');
+    style.id = 'intersection-point-styles';
+    style.textContent = `
+      .point-info h4 {
+        margin-top: 20px;
+        margin-bottom: 10px;
+        color: #4A00E0;
+        border-bottom: 2px solid #eee;
+        padding-bottom: 5px;
+      }
+      .point-info p {
+        margin: 5px 0;
+      }
+      .lines-list, .objects-list {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+      }
+      .lines-list li, .objects-list li {
+        background: #f8f9fa;
+        border: 1px solid #dee2e6;
+        border-radius: 5px;
+        padding: 10px;
+        margin-bottom: 10px;
+      }
+      .detail {
+        color: #6c757d;
+        font-size: 0.9em;
+      }
+      .point-summary {
+        background: #e3f2fd;
+        border-left: 4px solid #4A00E0;
+        padding: 10px;
+        margin: 10px 0;
+        border-radius: 4px;
+      }
+      .point-coordinates {
+        background: #f3e5f5;
+        padding: 10px;
+        border-radius: 4px;
+        margin: 10px 0;
+      }
+      .no-data {
+        color: #6c757d;
+        font-style: italic;
+        text-align: center;
+        padding: 20px;
+      }
+      .loading {
+        text-align: center;
+        padding: 40px;
+        color: #6c757d;
+      }
+    `;
+    document.head.appendChild(style);
+  }
+
+  return document.getElementById('intersectionPointModal');
+}
+
+function showIntersectionPointInfoModal(pointData) {
+  console.log('Данные точки:', pointData);
+
+  // Проверяем и создаем модальное окно, если его нет
+  let modal = document.getElementById('intersectionPointModal');
+  let contentDiv = document.getElementById('intersectionPointInfoContent');
+
+  if (!modal || !contentDiv) {
+    console.log('Модальное окно не найдено, создаем...');
+    modal = createIntersectionPointModal();
+    contentDiv = document.getElementById('intersectionPointInfoContent');
+
+    if (!modal || !contentDiv) {
+      console.error('Не удалось создать модальное окно!');
+      alert('Ошибка при создании модального окна. Пожалуйста, перезагрузите страницу.');
+      return;
+    }
+  }
+
+  // Проверяем, есть ли данные
+  if (!pointData || (!pointData.linesInPoint && !pointData.objectsInPoint)) {
+    contentDiv.innerHTML = `
+      <div class="point-info">
+        <div class="no-data">
+          <h4>⚠️ Нет данных</h4>
+          <p>Не удалось собрать информацию о точке пересечения</p>
+          <p>Координаты: ${pointData?.x || '?'}, ${pointData?.y || '?'}</p>
+        </div>
+      </div>
+    `;
+
+    modal.style.display = 'flex';
+    return;
+  }
+
+  const {x, y} = pointData;
+
+  // Формируем HTML содержимое
+  let html = `
+    <div class="point-info">
+      <div class="point-summary">
+        <h4>📊 Сводка по точке</h4>
+        <p><strong>Всего линий:</strong> ${pointData.totalLines || 0}</p>
+        <p><strong>Линий началом:</strong> ${pointData.linesStarting || 0}</p>
+        <p><strong>Линий концом:</strong> ${pointData.linesEnding || 0}</p>
+        <p><strong>Объектов в точке:</strong> ${pointData.totalObjects || 0}</p>
+      </div>
+      
+      <div class="point-coordinates">
+        <h4>📌 Координаты точки</h4>
+        <p><strong>X:</strong> ${formatTo5(x || 0)}</p>
+        <p><strong>Y:</strong> ${formatTo5(y || 0)}</p>
+      </div>
+  `;
+
+  // Раздел с линиями
+  if (pointData.linesInPoint && pointData.linesInPoint.length > 0) {
+    html += `
+      <h4>📏 Линии в точке (${pointData.linesInPoint.length})</h4>
+      <ul class="lines-list">
+    `;
+
+    pointData.linesInPoint.forEach((lineInfo, index) => {
+      const line = lineInfo.line;
+      const props = line.properties || {};
+      const length = roundTo5(Math.sqrt(Math.pow(line.x2 - line.x1, 2) + Math.pow(line.y2 - line.y1, 2)));
+
+      html += `
+        <li>
+          <strong>${index + 1}. ${lineInfo.name || 'Линия без названия'}</strong><br>
+          <span class="detail">${lineInfo.isStart ? '✅ НАЧАЛО линии' : '⭕ КОНЕЦ линии'}</span><br>
+          <span class="detail">Длина: ${formatTo5(length)} px</span><br>
+          <span class="detail">Объем воздуха: ${formatTo5(lineInfo.airVolume || 0)} м³/с</span><br>
+          <span class="detail">Сопротивление: ${formatTo5(lineInfo.airResistance || 0)}</span>
+        </li>
+      `;
+    });
+
+    html += '</ul>';
+  } else {
+    html += '<h4>📏 Линии в точке</h4><p class="no-data">Нет линий, проходящих через эту точку</p>';
+  }
+
+  // Раздел с объектами
+  if (pointData.objectsInPoint && pointData.objectsInPoint.length > 0) {
+    html += `
+      <h4>🏭 Объекты в точке (${pointData.objectsInPoint.length})</h4>
+      <ul class="objects-list">
+    `;
+
+    pointData.objectsInPoint.forEach((objInfo, index) => {
+      html += `
+        <li>
+          <strong>${index + 1}. ${objInfo.name || 'Объект без названия'}</strong><br>
+          <span class="detail">Тип: ${objInfo.type || 'неизвестен'}</span><br>
+          <span class="detail">Объем воздуха: ${formatTo5(objInfo.airVolume || 0)} м³/с</span><br>
+          <span class="detail">Сопротивление: ${formatTo5(objInfo.airResistance || 0)}</span><br>
+          <span class="detail">${objInfo.isInside ? '📍 Точка ВНУТРИ объекта' : '📍 Точка РЯДОМ с объектом'}</span>
+        </li>
+      `;
+    });
+
+    html += '</ul>';
+  } else {
+    html += '<h4>🏭 Объекты в точке</h4><p class="no-data">Нет объектов в этой точке</p>';
+  }
+
+  // Добавляем информацию о типе пересечения
+  if (pointData.type) {
+    html += `
+      <h4>ℹ️ Тип пересечения</h4>
+      <p>
+    `;
+
+    if (pointData.type === 'object-center') {
+      html += 'Объект на линии (центр объекта)';
+    } else if (pointData.type === 'object-edge') {
+      html += 'Точка на краю объекта';
+    } else if (pointData.line1 && pointData.line2) {
+      html += 'Пересечение двух линий';
+    } else {
+      html += pointData.type || 'Неизвестный тип пересечения';
+    }
+
+    html += '</p>';
+  }
+
+  html += '</div>';
+
+  // Вставляем содержимое в модальное окно
+  contentDiv.innerHTML = html;
+
+  // Показываем модальное окно
+  modal.style.display = 'flex';
+}
+
+function closeIntersectionPointModal() {
+  const modal = document.getElementById('intersectionPointModal');
+  if (modal) {
+    modal.style.display = 'none';
+  }
 }
 
 function createIntersectionPointForLineStart(line) {
@@ -2388,7 +2721,7 @@ function initializeModals() {
         else if (modal.id === 'addImageModal') closeAddImageModal();
         else if (modal.id === 'objectPropertiesModal') closeObjectPropertiesModal();
         else if (modal.id === 'intersectionPointModal') closeIntersectionPointModal();
-        // else if (modal.id === 'airVolumeReportModal') closeAirVolumeReport();
+        else if (modal.id === 'airVolumeReportModal') closeAirVolumeReport();
         else if (modal.id === 'pdfExportModal') closePdfExportModal();
       }
     });
@@ -2396,11 +2729,18 @@ function initializeModals() {
 
   document.addEventListener('keydown', function (e) {
     if (e.key === 'Escape') {
+      if (isDrawingLine) {
+        deactivateAllModes();
+        cleanupPreviewLines();
+        canvas.renderAll();
+        showNotification('Режим рисования отменен', 'info');
+      }
+
       closeLinePropertiesModal();
       closeAddImageModal();
       closeObjectPropertiesModal();
       closeIntersectionPointModal();
-      // closeAirVolumeReport();
+      closeAirVolumeReport();
       closePdfExportModal();
     }
   });
@@ -2647,10 +2987,6 @@ function addNewImage() {
   showNotification(`Изображение "${name}" добавлено!`, 'success');
 }
 
-function closeIntersectionPointModal() {
-  document.getElementById('intersectionPointModal').style.display = 'none';
-}
-
 // ==================== УПРАВЛЕНИЕ ПРОЕКТОМ ====================
 function saveDrawing() {
   const json = JSON.stringify(canvas.toJSON(['id', 'properties', 'pointIndex', 'pointData', 'lineStartsFromObject', 'startObject', 'airVolumeText', 'isPreview']));
@@ -2697,9 +3033,8 @@ function loadDrawing() {
             if (obj.type === 'line') normalizeLineProperties(obj);
           });
 
-          // Отложенное обновление
           setTimeout(() => {
-            updateLineConnections();
+            updateConnectionGraph();
             updateAllAirVolumeTexts();
           }, 500);
 
@@ -2751,9 +3086,8 @@ function undoAction() {
   redoStack.push(currentState);
   const previousState = undoStack[undoStack.length - 1];
   canvas.loadFromJSON(previousState, function () {
-    // Отложенное обновление
     setTimeout(() => {
-      updateLineConnections();
+      updateConnectionGraph();
       updateAllAirVolumeTexts();
     }, 100);
 
@@ -2770,9 +3104,8 @@ function redoAction() {
   const nextState = redoStack.pop();
   undoStack.push(nextState);
   canvas.loadFromJSON(nextState, function () {
-    // Отложенное обновление
     setTimeout(() => {
-      updateLineConnections();
+      updateConnectionGraph();
       updateAllAirVolumeTexts();
     }, 100);
 
@@ -2802,14 +3135,12 @@ function setupKeyboardShortcuts() {
         showNotification('Режим рисования отменен', 'info');
       }
 
-      // Закрытие модальных окон (без вызова несуществующей функции)
       closeLinePropertiesModal();
       closeAddImageModal();
       closeObjectPropertiesModal();
       closeIntersectionPointModal();
+      closeAirVolumeReport();
       closePdfExportModal();
-      
-      hideContextMenu();
     }
 
     if (event.key === 'Delete') {
@@ -2833,9 +3164,8 @@ function setupKeyboardShortcuts() {
         if (activeObject.type === 'line') removeAirVolumeText(activeObject);
         canvas.remove(activeObject);
 
-        // Отложенное обновление
         setTimeout(() => {
-          updateLineConnections();
+          updateConnectionGraph();
         }, 100);
 
         canvas.renderAll();
@@ -2975,9 +3305,8 @@ function deleteObject() {
   if (activeObject.type === 'line') removeAirVolumeText(activeObject);
   canvas.remove(activeObject);
 
-  // Отложенное обновление
   setTimeout(() => {
-    updateLineConnections();
+    updateConnectionGraph();
   }, 100);
 
   canvas.renderAll();
@@ -3000,9 +3329,8 @@ function duplicateObject() {
     canvas.add(clone);
     canvas.setActiveObject(clone);
 
-    // Отложенное обновление
     setTimeout(() => {
-      updateLineConnections();
+      updateConnectionGraph();
     }, 100);
 
     canvas.renderAll();
@@ -3072,9 +3400,6 @@ document.addEventListener('DOMContentLoaded', function () {
   }
 
   initializeTooltips();
-
-  // Инициализация событий для узлов
-  setupNodeMouseEvents();
 });
 
 // ==================== ТУЛТИПЫ ====================
@@ -3141,9 +3466,8 @@ function testNodeConnection() {
   canvas.add(line2);
   canvas.add(line3);
 
-  // Отложенное обновление
   setTimeout(() => {
-    updateLineConnections();
+    updateConnectionGraph();
   }, 100);
 
   const testImage = {
@@ -3170,9 +3494,8 @@ function testNodeConnection() {
     line1.lineStartsFromObject = true;
     line1.startObject = img;
 
-    // Отложенное обновление
     setTimeout(() => {
-      updateLineConnections();
+      updateConnectionGraph();
       updateAllAirVolumeTexts();
     }, 200);
 
@@ -3223,15 +3546,6 @@ function exportToPdf() {
     URL.revokeObjectURL(url);
   }, 1500);
 }
-
-// ==================== ЭКСПОРТ ГЛОБАЛЬНЫХ ФУНКЦИЙ ====================
-window.canvas = canvas;
-window.analyzeIntersectionPoints = analyzeIntersectionPoints;
-window.calculateAirVolumesForAllLines = calculateAirVolumesForAllLines;
-window.testNodeConnection = testNodeConnection;
-window.clearIntersectionPoints = clearIntersectionPoints;
-window.updateLineConnections = updateLineConnections;
-window.toggleNodeLock = toggleNodeLock;
 
 // ==================== АНАЛИЗ ТОЧЕК ПЕРЕСЕЧЕНИЯ ====================
 function analyzeIntersectionPoints() {
@@ -3424,4 +3738,22 @@ function analyzeIntersectionPoints() {
   return pointsMap;
 }
 
-console.log('Редактор технических чертежей с неразрывными соединениями полностью загружен! ФИНАЛЬНАЯ версия.');
+// ==================== ЭКСПОРТ ГЛОБАЛЬНЫХ ФУНКЦИЙ ====================
+// ==================== ЭКСПОРТ ГЛОБАЛЬНЫХ ФУНКЦИЙ ====================
+window.canvas = canvas;
+window.analyzeIntersectionPoints = analyzeIntersectionPoints;
+window.calculateAirVolumesForAllLines = calculateAirVolumesForAllLines;
+window.testNodeConnection = testNodeConnection;
+window.clearIntersectionPoints = clearIntersectionPoints;
+window.updateConnectionGraph = updateConnectionGraph;
+window.toggleNodeLock = toggleNodeLock;
+window.exportLinePropertiesToCSV = exportLinePropertiesToCSV;
+window.calculateAllPropertiesForAllLines = calculateAllPropertiesForAllLines;
+window.showAirVolumeReport = showAirVolumeReport;
+window.closeAirVolumeReport = closeAirVolumeReport;
+window.exportAirVolumeReportToCSV = exportAirVolumeReportToCSV;
+window.showIntersectionPointInfoModal = showIntersectionPointInfoModal;
+window.closeIntersectionPointModal = closeIntersectionPointModal;
+window.collectPointInfo = collectPointInfo;
+
+console.log('Редактор технических чертежей с неразрывными соединениями полностью загружен! ПОЛНАЯ ФИНАЛЬНАЯ версия.');

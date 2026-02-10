@@ -2012,7 +2012,7 @@ function findAllIntersections() {
 function lineIntersection(line1, line2) {
   if (line1 === line2) return null;
   const x1 = line1.x1, y1 = line1.y1;
-  const x2 = line1.x2, y2 = line1.y2;
+  const x2 = line1.x2, y2 = line2.y2;
   const x3 = line2.x1, y3 = line2.y1;
   const x4 = line2.x2, y4 = line2.y2;
   const denominator = roundTo5((y4 - y3) * (x2 - x1) - (x4 - x3) * (y2 - y1));
@@ -2861,84 +2861,62 @@ function analyzeIntersectionPoints() {
       });
     }
 
-    if (point.linesEnding.length === 1 && point.linesStarting.length >= 1) {
+    // ИСПРАВЛЕНИЕ: корректно обрабатываем точки, где несколько линий концом и одна началом
+    if (point.linesEnding.length >= 1 && point.linesStarting.length >= 1) {
       pointsWithMultipleLines++;
-      const incomingVolume = point.linesEnding[0].airVolume || 0;
 
+      // Суммируем объемы всех входящих линий
+      let totalIncomingVolume = 0;
+      point.linesEnding.forEach(lineInfo => {
+        totalIncomingVolume += lineInfo.airVolume || 0;
+      });
+      totalIncomingVolume = roundTo5(totalIncomingVolume);
+
+      // Учитываем объект, если он есть
+      let volumeToDistribute = totalIncomingVolume;
       if (point.objects.length > 0 && point.objects[0].object.properties?.airResistance) {
         const objectResistance = point.objects[0].object.properties.airResistance;
-        const volumeAfterObject = roundTo5(incomingVolume / objectResistance);
-
-        if (point.linesStarting.length === 1) {
-          point.linesStarting[0].line.properties.airVolume = volumeAfterObject;
-          point.linesStarting[0].line.set('properties', point.linesStarting[0].line.properties);
-          createOrUpdateAirVolumeText(point.linesStarting[0].line);
-          console.log(`\n🔗 ТОЧКА (${point.x.toFixed(2)}, ${point.y.toFixed(2)}):`);
-          console.log(`   Входящий объем: ${incomingVolume.toFixed(3)} м³/с`);
-          console.log(`   Сопротивление объекта: ${objectResistance}`);
-          console.log(`   Объем после объекта: ${volumeAfterObject.toFixed(3)} м³/с`);
-          console.log(`   Линия получает: ${volumeAfterObject.toFixed(3)} м³/с`);
-        } else {
-          let totalConductivity = 0;
-          point.linesStarting.forEach(lineInfo => {
-            if (lineInfo.line.properties?.airResistance && lineInfo.line.properties.airResistance > 0) {
-              totalConductivity += 1 / lineInfo.line.properties.airResistance;
-            }
-          });
-
-          if (totalConductivity > 0) {
-            console.log(`\n🔗 ТОЧКА (${point.x.toFixed(2)}, ${point.y.toFixed(2)}):`);
-            console.log(`   Входящий объем: ${incomingVolume.toFixed(3)} м³/с`);
-            console.log(`   Сопротивление объекта: ${objectResistance}`);
-            console.log(`   Объем после объекта: ${volumeAfterObject.toFixed(3)} м³/с`);
-            console.log(`   Суммарная проводимость линий: ${totalConductivity.toFixed(3)}`);
-
-            point.linesStarting.forEach((lineInfo, index) => {
-              if (lineInfo.line.properties?.airResistance && lineInfo.line.properties.airResistance > 0) {
-                const lineConductivity = 1 / lineInfo.line.properties.airResistance;
-                const lineVolume = roundTo5(volumeAfterObject * (lineConductivity / totalConductivity));
-                lineInfo.line.properties.airVolume = lineVolume;
-                lineInfo.line.set('properties', lineInfo.line.properties);
-                createOrUpdateAirVolumeText(lineInfo.line);
-                console.log(`   Линия ${index + 1} (R=${lineInfo.line.properties.airResistance.toFixed(3)}) получает: ${lineVolume.toFixed(3)} м³/с`);
-              }
-            });
-          }
-        }
+        volumeToDistribute = roundTo5(totalIncomingVolume / objectResistance);
+        console.log(`\n🔗 ТОЧКА (${point.x.toFixed(2)}, ${point.y.toFixed(2)}) С ОБЪЕКТОМ:`);
+        console.log(`   Входящий объем: ${totalIncomingVolume.toFixed(3)} м³/с`);
+        console.log(`   Сопротивление объекта: ${objectResistance.toFixed(3)}`);
+        console.log(`   Объем после объекта: ${volumeToDistribute.toFixed(3)} м³/с`);
       } else {
-        if (point.linesStarting.length === 1) {
-          point.linesStarting[0].line.properties.airVolume = incomingVolume;
-          point.linesStarting[0].line.set('properties', point.linesStarting[0].line.properties);
-          createOrUpdateAirVolumeText(point.linesStarting[0].line);
-          console.log(`\n🔄 ТОЧКА (${point.x.toFixed(2)}, ${point.y.toFixed(2)}):`);
-          console.log(`   Подходит одна линия концом и одна линия началом`);
-          console.log(`   Объем входящей линии: ${incomingVolume.toFixed(3)} м³/с`);
-          console.log(`   Линия получает: ${incomingVolume.toFixed(3)} м³/с`);
-        } else {
-          let totalConductivity = 0;
-          point.linesStarting.forEach(lineInfo => {
+        console.log(`\n🔗 ТОЧКА (${point.x.toFixed(2)}, ${point.y.toFixed(2)}):`);
+        console.log(`   Входящий объем: ${totalIncomingVolume.toFixed(3)} м³/с (сумма ${point.linesEnding.length} линий)`);
+        console.log(`   Объем для распределения: ${volumeToDistribute.toFixed(3)} м³/с`);
+      }
+
+      // Распределяем объем между исходящими линиями
+      if (point.linesStarting.length === 1) {
+        // Просто присваиваем весь объем одной исходящей линии
+        const outgoingLine = point.linesStarting[0].line;
+        outgoingLine.properties.airVolume = volumeToDistribute;
+        outgoingLine.set('properties', outgoingLine.properties);
+        createOrUpdateAirVolumeText(outgoingLine);
+        console.log(`   Линия получает: ${volumeToDistribute.toFixed(3)} м³/с`);
+      } else {
+        // Распределяем по проводимости
+        let totalConductivity = 0;
+        point.linesStarting.forEach(lineInfo => {
+          if (lineInfo.line.properties?.airResistance && lineInfo.line.properties.airResistance > 0) {
+            totalConductivity += 1 / lineInfo.line.properties.airResistance;
+          }
+        });
+
+        if (totalConductivity > 0) {
+          console.log(`   Суммарная проводимость исходящих линий: ${totalConductivity.toFixed(3)}`);
+
+          point.linesStarting.forEach((lineInfo, index) => {
             if (lineInfo.line.properties?.airResistance && lineInfo.line.properties.airResistance > 0) {
-              totalConductivity += 1 / lineInfo.line.properties.airResistance;
+              const lineConductivity = 1 / lineInfo.line.properties.airResistance;
+              const lineVolume = roundTo5(volumeToDistribute * (lineConductivity / totalConductivity));
+              lineInfo.line.properties.airVolume = lineVolume;
+              lineInfo.line.set('properties', lineInfo.line.properties);
+              createOrUpdateAirVolumeText(lineInfo.line);
+              console.log(`   Линия ${index + 1} (R=${lineInfo.line.properties.airResistance.toFixed(3)}) получает: ${lineVolume.toFixed(3)} м³/с`);
             }
           });
-
-          if (totalConductivity > 0) {
-            console.log(`\n🔗 ТОЧКА (${point.x.toFixed(2)}, ${point.y.toFixed(2)}):`);
-            console.log(`   Подходит одна линия концом и ${point.linesStarting.length} линий началом`);
-            console.log(`   Объем входящей линии: ${incomingVolume.toFixed(3)} м³/с`);
-            console.log(`   Суммарная проводимость линий: ${totalConductivity.toFixed(3)}`);
-
-            point.linesStarting.forEach((lineInfo, index) => {
-              if (lineInfo.line.properties?.airResistance && lineInfo.line.properties.airResistance > 0) {
-                const lineConductivity = 1 / lineInfo.line.properties.airResistance;
-                const lineVolume = roundTo5(incomingVolume * (lineConductivity / totalConductivity));
-                lineInfo.line.properties.airVolume = lineVolume;
-                lineInfo.line.set('properties', lineInfo.line.properties);
-                createOrUpdateAirVolumeText(lineInfo.line);
-                console.log(`   Линия ${index + 1} (R=${lineInfo.line.properties.airResistance.toFixed(3)}) получает: ${lineVolume.toFixed(3)} м³/с`);
-              }
-            });
-          }
         }
       }
     }

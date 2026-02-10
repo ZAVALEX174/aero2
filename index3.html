@@ -1,10 +1,715 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ru">
 <head>
   <meta charset="UTF-8">
-  <title>$Title$</title>
+  <title>Редактор технических чертежей</title>
+  <script src="./js/fabric-min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <link
+    rel="stylesheet"
+    href="./styles/style2.css"
+  >
 </head>
 <body>
-$END$
+<div class="container">
+  <h1>📐 Редактор технических чертежей</h1>
+  <p class="subtitle">Создавайте чертежи с привязкой к сетке, редактируйте
+    свойства объектов и разделяйте линии
+  </p>
+
+  <div class="main-content">
+    <div class="left-panel">
+      <!-- Панель инструментов -->
+      <div class="toolbar">
+        <h3>Инструменты</h3>
+        <div id="tools">
+          <button
+            onclick="activateLineDrawing()"
+            id="lineDrawingBtn"
+          >
+            <span>📏</span> Линия
+          </button>
+          <button
+            onclick="splitAllLinesAtObjectCenters()"
+            id="splitAtCentersBtn"
+          >
+            <span>🎯</span> Разделить по центрам
+          </button>
+          <button onclick="splitAllLines()">
+            <span>✂️</span> Разделить
+          </button>
+          <button
+            onclick="toggleContinuousMode()"
+            id="continuousModeBtn"
+          >
+            <span>🔗</span> Непрерывный (ВЫКЛ)
+          </button>
+          <button
+            id="calculateAirBtn"
+            class="toolbar-btn"
+            title="Расчет воздуха"
+          >
+            <span>🌬️</span> Расчет воздуха
+          </button>
+          <button
+            id="resetCalcBtn"
+            class="btn btn-warning"
+          >
+            <span>🔄</span> Сбросить расчет
+          </button>
+          <button
+            id="analyzePointsBtn"
+            class="btn"
+          >
+            <span>🔍</span> Анализ точек
+          </button>
+          <button
+            onclick="toggleLineSplitMode()"
+            id="lineSplitModeBtn"
+            class="line-split-mode-btn"
+          >
+            <span>🎯</span> Режим: АВТО
+          </button>
+          <button
+            onclick="toggleAutoSplitMode()"
+            id="autoSplitBtn"
+          >
+            <span>⚡</span> Авторазбивка (ВКЛ)
+          </button>
+          <button
+            onclick="toggleGrid()"
+            id="gridToggleBtn"
+          >
+            <span>🔲</span> Сетка (ВКЛ)
+          </button>
+        </div>
+
+        <h3>Управление</h3>
+        <div class="control-buttons">
+          <button onclick="showLinePropertiesModal()">
+            <span>⚙️</span> Свойства линии
+          </button>
+          <button onclick="showObjectPropertiesModal()">
+            <span>⚙️</span> Свойства объекта
+          </button>
+          <button onclick="exportToPDFWithOptions()">
+            <span>📄</span> Сохранить в PDF
+          </button>
+          <button onclick="showAddImageModal()">
+            <span>➕</span> Добавить изображение
+          </button>
+          <button
+            onclick="undoAction()"
+            id="undoBtn"
+          >
+            <span>↩️</span> Отменить
+          </button>
+          <button
+            onclick="redoAction()"
+            id="redoBtn"
+            disabled
+          >
+            <span>↪️</span> Повторить
+          </button>
+          <button onclick="saveDrawing()">
+            <span>💾</span> Сохранить
+          </button>
+          <button onclick="loadDrawing()">
+            <span>📂</span> Загрузить
+          </button>
+          <button
+            onclick="clearCanvas()"
+            class="danger"
+          >
+            <span>🗑️</span> Очистить холст
+          </button>
+          <button onclick="exportLinePropertiesToCSV()">
+            <span>📊</span> Экспорт CSV
+          </button>
+          <button onclick="calculateAllPropertiesForAllLines()">
+            <span>🧮</span> Пересчитать все
+          </button>
+          <button onclick="showAirVolumeReport()">
+            <span>📊</span> Отчет воздуха
+          </button>
+        </div>
+      </div>
+
+      <!-- Панель изображений -->
+      <div class="image-library">
+        <h3>📁 Изображения (Объекты)</h3>
+        <div
+          class="image-library-grid"
+          id="imageLibraryGrid"
+        ></div>
+      </div>
+
+      <!-- Панель свойств -->
+      <div class="properties-panel">
+        <h3>Свойства объекта</h3>
+        <div id="properties-content">
+          <p style="color: #7f8c8d; font-style: italic; text-align: center; padding: 20px;">
+            Выберите объект на чертеже
+          </p>
+        </div>
+      </div>
+
+      <!-- Статусная панель -->
+      <div class="status-panel">
+        <div id="status">Готово к работе. Объектов: 0</div>
+        <div
+          id="hint"
+          class="hint"
+        >Используйте Alt для привязки к краям объектов
+        </div>
+      </div>
+
+      <!-- Горячие клавиши -->
+      <div class="hotkeys-panel">
+        <h4>📋 Горячие клавиши</h4>
+        <div class="hotkeys-grid">
+          <div class="hotkey-item"><kbd>ESC</kbd> <span>Отмена действия</span>
+          </div>
+          <div class="hotkey-item"><kbd>Delete</kbd> <span>Удалить объект</span>
+          </div>
+          <div class="hotkey-item"><kbd>Ctrl+S</kbd> <span>Сохранить</span>
+          </div>
+          <div class="hotkey-item"><kbd>Ctrl+O</kbd> <span>Загрузить</span>
+          </div>
+          <div class="hotkey-item"><kbd>Ctrl+Z</kbd> <span>Отменить</span></div>
+          <div class="hotkey-item"><kbd>Ctrl+Y</kbd> <span>Повторить</span>
+          </div>
+          <div class="hotkey-item"><kbd>L</kbd> <span>Рисовать линию</span>
+          </div>
+          <div class="hotkey-item"><kbd>S</kbd> <span>Разделить линии</span>
+          </div>
+          <div class="hotkey-item"><kbd>C</kbd>
+            <span>Разделить по центрам</span></div>
+          <div class="hotkey-item"><kbd>G</kbd> <span>Сетка вкл/выкл</span>
+          </div>
+          <div class="hotkey-item"><kbd>A</kbd>
+            <span>Авторазбивка вкл/выкл</span></div>
+          <div class="hotkey-item"><kbd>Shift</kbd> + <kbd>Клик</kbd> <span>Быстрое добавление</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Холст -->
+    <div class="canvas-container">
+      <div id="canvas-wrapper">
+        <canvas id="fabric-canvas"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Модальное окно свойств линии -->
+<div
+  id="linePropertiesModal"
+  class="modal"
+>
+  <div class="modal-content">
+    <div class="modal-header">
+      <h2 class="modal-title">⚙️ Свойства линии</h2>
+      <button
+        class="close-modal"
+        onclick="closeLinePropertiesModal()"
+      >×
+      </button>
+    </div>
+    <form
+      id="linePropertiesForm"
+      class="modal-form"
+    >
+      <div class="form-group">
+        <label class="form-label">Название:</label>
+        <input
+          type="text"
+          id="propertyName"
+          placeholder="Например: Главная балка"
+          required
+        >
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Цвет:</label>
+          <input
+            type="color"
+            id="propertyColor"
+            value="#4A00E0"
+          >
+        </div>
+        <div class="form-group">
+          <label class="form-label">Толщина:</label>
+          <select id="propertyWidth">
+            <option value="1">1 px</option>
+            <option value="2">2 px</option>
+            <option value="3">3 px</option>
+            <option value="4">4 px</option>
+            <option
+              value="5"
+              selected
+            >5 px
+            </option>
+          </select>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label for="propertyPassageLength">Длина прохода (м²):</label>
+          <input
+            type="number"
+            id="propertyPassageLength"
+            step="0.001"
+            min="0"
+            value="0.5"
+          >
+        </div>
+        <div class="form-group">
+          <label for="propertyRoughnessCoefficient">Коэфф. шероховатости:
+          </label>
+          <input
+            type="number"
+            id="propertyRoughnessCoefficient"
+            step="0.000001"
+            min="0"
+            value="0.015"
+          >
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label for="propertyCrossSectionalArea">Площадь сечения (м):</label>
+          <input
+            type="number"
+            id="propertyCrossSectionalArea"
+            step="0.001"
+            min="0"
+            value="10"
+          >
+        </div>
+        <div class="form-group">
+          <label class="form-label">W (кг/м):</label>
+          <input
+            type="number"
+            id="propertyW"
+            step="0.01"
+            value="1.0"
+            required
+          >
+        </div>
+      </div>
+      <div class="form-group">
+        <label for="propertyAirVolume">Объем воздуха линии (м³/с):</label>
+        <input
+          type="number"
+          id="propertyAirVolume"
+          step="0.001"
+          min="0"
+          value="0"
+        >
+      </div>
+      <div class="modal-buttons">
+        <button
+          type="button"
+          class="btn btn-secondary"
+          onclick="closeLinePropertiesModal()"
+        >Отмена
+        </button>
+        <button
+          type="submit"
+          class="btn btn-primary"
+        >Применить
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Модальное окно свойств объекта -->
+<div
+  id="objectPropertiesModal"
+  class="modal"
+>
+  <div class="modal-content">
+    <div class="modal-header">
+      <h2 class="modal-title">⚙️ Свойства объекта</h2>
+      <button
+        class="close-modal"
+        onclick="closeObjectPropertiesModal()"
+      >×
+      </button>
+    </div>
+    <form
+      id="objectPropertiesForm"
+      class="modal-form"
+    >
+      <div class="form-group">
+        <label class="form-label">Название:</label>
+        <input
+          type="text"
+          id="objPropertyName"
+          placeholder="Например: Вентилятор"
+          required
+        >
+      </div>
+      <div class="form-group">
+        <label class="form-label">Тип объекта:</label>
+        <select id="objPropertyType">
+          <option value="default">Обычный объект</option>
+          <option value="fan">Вентилятор</option>
+          <option value="fire">Пожарный датчик</option>
+          <option value="valve">Дверь</option>
+          <option value="pump">Насос</option>
+          <option value="sensor">Датчик</option>
+        </select>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">X:</label>
+          <input
+            type="number"
+            id="objPropertyX"
+            placeholder="X"
+            step="1"
+          >
+        </div>
+        <div class="form-group">
+          <label class="form-label">Y:</label>
+          <input
+            type="number"
+            id="objPropertyY"
+            placeholder="Y"
+            step="1"
+          >
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Ширина:</label>
+          <input
+            type="number"
+            id="objPropertyWidth"
+            placeholder="Ширина"
+            step="1"
+            min="10"
+            max="500"
+          >
+        </div>
+        <div class="form-group">
+          <label class="form-label">Высота:</label>
+          <input
+            type="number"
+            id="objPropertyHeight"
+            placeholder="Высота"
+            step="1"
+            min="10"
+            max="500"
+          >
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label for="objAirVolume">Объем воздуха (м³/с):</label>
+          <input
+            type="number"
+            step="0.1"
+            id="objAirVolume"
+            name="objAirVolume"
+          >
+        </div>
+        <div class="form-group">
+          <label for="objAirResistance">Сопротивление (Па):</label>
+          <input
+            type="number"
+            step="0.1"
+            id="objAirResistance"
+            name="objAirResistance"
+          >
+        </div>
+      </div>
+      <div class="modal-buttons">
+        <button
+          type="button"
+          class="btn btn-danger"
+          onclick="deleteCurrentObject()"
+        >
+          <span>🗑️</span> Удалить
+        </button>
+        <button
+          type="button"
+          class="btn btn-secondary"
+          onclick="closeObjectPropertiesModal()"
+        >Отмена
+        </button>
+        <button
+          type="submit"
+          class="btn btn-primary"
+        >Сохранить
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Модальное окно добавления изображения -->
+<div
+  id="addImageModal"
+  class="modal"
+>
+  <div class="modal-content">
+    <div class="modal-header">
+      <h2 class="modal-title">➕ Добавить изображение</h2>
+      <button
+        class="close-modal"
+        onclick="closeAddImageModal()"
+      >×
+      </button>
+    </div>
+    <form
+      id="addImageForm"
+      class="modal-form"
+    >
+      <div class="form-group">
+        <label class="form-label">URL изображения:</label>
+        <input
+          type="url"
+          id="newImageUrl"
+          placeholder="https://example.com/image.png"
+        >
+      </div>
+      <div class="form-group">
+        <label class="form-label">Название:</label>
+        <input
+          type="text"
+          id="newImageName"
+          placeholder="Например: Вентилятор"
+          required
+        >
+      </div>
+      <div class="form-group">
+        <label class="form-label">Тип объекта:</label>
+        <select id="newImageType">
+          <option value="default">Обычный объект</option>
+          <option value="fan">Вентилятор</option>
+          <option value="fire">Пожарный датчик</option>
+          <option value="valve">Дверь</option>
+          <option value="pump">Насос</option>
+          <option value="sensor">Датчик</option>
+        </select>
+      </div>
+      <div class="modal-buttons">
+        <button
+          type="button"
+          class="btn btn-secondary"
+          onclick="closeAddImageModal()"
+        >Отмена
+        </button>
+        <button
+          type="submit"
+          class="btn btn-primary"
+        >Добавить
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Модальное окно информации о точке -->
+<div
+  id="intersectionPointModal"
+  class="modal"
+>
+  <div
+    class="modal-content"
+    style="max-width: 800px;"
+  >
+    <div class="modal-header">
+      <h2 class="modal-title">📌 Информация о точке разделения</h2>
+      <button
+        class="close-modal"
+        onclick="closeIntersectionPointModal()"
+      >×
+      </button>
+    </div>
+    <div
+      id="intersectionPointInfo"
+      style="padding: 20px;"
+    ></div>
+    <div class="modal-buttons">
+      <button
+        class="btn btn-secondary"
+        onclick="closeIntersectionPointModal()"
+      >Закрыть
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Модальное окно отчета о воздухе -->
+<div
+  id="airVolumeReportModal"
+  class="modal"
+>
+  <div
+    class="modal-content"
+    style="max-width: 800px; max-height: 80vh; overflow-y: auto;"
+  >
+    <div class="modal-header">
+      <h3>📊 Отчет о передаче объемов воздуха</h3>
+      <span
+        class="modal-close"
+        onclick="closeAirVolumeReport()"
+      >&times;</span>
+    </div>
+    <div
+      class="modal-body"
+      id="airVolumeReportContent"
+    ></div>
+  </div>
+</div>
+
+<!-- Модальное окно экспорта PDF -->
+<div
+  id="pdfExportModal"
+  class="modal"
+>
+  <div class="modal-content">
+    <div class="modal-header">
+      <h3>Экспорт в PDF</h3>
+      <span
+        class="close"
+        onclick="closePdfExportModal()"
+      >&times;</span>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label for="pdfQuality">Качество (масштаб):</label>
+        <select
+          id="pdfQuality"
+          class="form-control"
+        >
+          <option value="1">Низкое (1x)</option>
+          <option
+            value="2"
+            selected
+          >Среднее (2x)
+          </option>
+          <option value="3">Высокое (3x)</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label for="pdfFormat">Формат бумаги:</label>
+        <select
+          id="pdfFormat"
+          class="form-control"
+        >
+          <option value="A4">A4 (210×297 мм)</option>
+          <option value="A3">A3 (297×420 мм)</option>
+          <option value="original">Оригинальный размер</option>
+        </select>
+      </div>
+      <div class="form-group form-check">
+        <input
+          type="checkbox"
+          id="includeGrid"
+          class="form-check-input"
+          checked
+        >
+        <label
+          for="includeGrid"
+          class="form-check-label"
+        >Включить сетку
+        </label>
+      </div>
+      <div class="form-group form-check">
+        <input
+          type="checkbox"
+          id="includeAirVolumeText"
+          class="form-check-input"
+          checked
+        >
+        <label
+          for="includeAirVolumeText"
+          class="form-check-label"
+        >Включить тексты объемов воздуха
+        </label>
+      </div>
+      <div class="form-group form-check">
+        <input
+          type="checkbox"
+          id="addMetadata"
+          class="form-check-input"
+          checked
+        >
+        <label
+          for="addMetadata"
+          class="form-check-label"
+        >Добавить метаданные (дата, количество объектов)
+        </label>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button
+        type="button"
+        class="btn btn-primary"
+        onclick="startPdfExport()"
+      >Экспортировать
+      </button>
+      <button
+        type="button"
+        class="btn btn-secondary"
+        onclick="closePdfExportModal()"
+      >Отмена
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Контекстное меню -->
+<div
+  id="contextMenu"
+  class="context-menu"
+>
+  <div
+    class="context-menu-item"
+    onclick="deleteObject()"
+  >
+    <span>🗑️</span> Удалить
+  </div>
+  <div
+    class="context-menu-item"
+    onclick="duplicateObject()"
+  >
+    <span>🔁</span> Дублировать
+  </div>
+  <div
+    class="context-menu-item"
+    onclick="bringObjectToFront()"
+  >
+    <span>⬆️</span> На передний план
+  </div>
+  <div
+    class="context-menu-item"
+    onclick="sendObjectToBack()"
+  >
+    <span>⬇️</span> На задний план
+  </div>
+</div>
+
+<!-- Контейнер для уведомлений -->
+<div id="notificationContainer"></div>
+
+<!--<script src="./js/pereschot-07-02-2026-1.js"></script>-->
+<!--<script src="./js/pereschot-07-02-2026-2.js"></script>-->
+<!--<script src="./js/pereschot-07-02-2026-3.js"></script>-->
+<!--<script src="./js/pereschot-08-02-2026-1.js"></script>-->
+<!--<script src="./js/pereschot-08-02-2026-2-optimiz.js"></script>-->
+<!--<script src="./js/pereschot-08-02-2026-2-optimiz-2.js"></script>-->
+<!--<script src="./js/pereschot-08-02-2026-2-optimiz-3.js"></script>-->
+<!--<script src="./js/pereschot-09-02-2026-2-optimiz-1.js"></script>-->
+<script src="./js/pereschot-09-02-2026-2-optimiz-2.js"></script>
 </body>
 </html>

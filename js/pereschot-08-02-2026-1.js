@@ -1185,7 +1185,7 @@ function findClosestPointOnObjectEdge(object, point) {
   };
 }
 
-// ==================== СОБЫТИЯ КАНВАСА ====================
+// ==================== СОБЫТИЯ КАНВАСА (ИСПРАВЛЕННЫЕ) ====================
 function setupCanvasEvents() {
   if (!canvas) return;
   canvas.on('mouse:down', handleCanvasMouseDown);
@@ -1227,18 +1227,10 @@ function findLineAtPoint(point, threshold = APP_CONFIG.SNAP_RADIUS) {
 }
 
 function handleCanvasMouseDown(options) {
-  // ОСНОВНОЕ ИСПРАВЛЕНИЕ: Убрана блокировка по isProcessingEvents и isCalculatingAirVolumes
-  // Вместо этого используем более точные проверки
-
   const pointer = canvas.getPointer(options.e);
 
   if (options.e.shiftKey && currentImageData) {
-    // Проверяем только, если идет расчет воздуха
-    if (isCalculatingAirVolumes) {
-      showNotification('Дождитесь завершения расчета перед добавлением объектов!', 'warning');
-      return;
-    }
-
+    // Убрана проверка на isCalculatingAirVolumes для обычного добавления изображений
     // Добавляем изображение с небольшой задержкой
     setTimeout(() => {
       addImageAtPosition(pointer.x, pointer.y);
@@ -1578,7 +1570,7 @@ function handleObjectRemoved(e) {
   }, 100);
 }
 
-// ==================== УПРАВЛЕНИЕ РЕЖИМАМИ ====================
+// ==================== УПРАВЛЕНИЕ РЕЖИМАМИ (ИСПРАВЛЕННЫЕ) ====================
 function activateLineDrawing() {
   deactivateAllModes();
   cleanupPreviewLines();
@@ -1613,7 +1605,7 @@ function deactivateAllModes() {
   previewLine = null;
   lineStartPoint = null;
   lastLineEndPoint = null;
-  currentImageData = null;
+  // currentImageData = null; // Не сбрасываем, чтобы можно было добавлять изображение после рисования линии
 
   canvas.defaultCursor = 'default';
   canvas.selection = true;
@@ -1721,7 +1713,7 @@ function snapToGrid(value, gridSize = APP_CONFIG.GRID_SIZE) {
   return roundTo5(Math.round(value / gridSize) * gridSize);
 }
 
-// ==================== ИЗОБРАЖЕНИЯ ====================
+// ==================== ИЗОБРАЖЕНИЯ (ИСПРАВЛЕННЫЕ) ====================
 function updateImageLibrary() {
   const grid = document.getElementById('imageLibraryGrid');
   if (!grid) return;
@@ -1753,9 +1745,6 @@ function addImageAtPosition(x, y) {
     showNotification('Сначала выберите изображение!', 'error');
     return;
   }
-
-  // ОСНОВНОЕ ИСПРАВЛЕНИЕ: убрана проверка на isCalculatingAirVolumes
-  // Теперь изображение можно добавлять в любое время
 
   isDrawingImage = true;
 
@@ -1815,7 +1804,6 @@ function addImageAtPosition(x, y) {
 
 // ==================== РАЗДЕЛЕНИЕ ЛИНИЙ (ИСПРАВЛЕННОЕ) ====================
 function splitAllLines() {
-  // ОСНОВНОЕ ИСПРАВЛЕНИЕ: убраны флаги, блокирующие добавление изображений
   clearIntersectionPoints();
   const intersections = findAllIntersections();
   intersectionPoints = intersections;
