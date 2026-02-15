@@ -4516,273 +4516,6 @@ function exportAirVolumeReportToCSV() {
     csvContent += row + "\n";
   });
 
-  // ==================== ЭКСПОРТ В PDF ====================
-  // ==================== ЭКСПОРТ В PDF ====================
-// Эти функции должны быть в глобальной области видимости, поэтому выносим их из exportAirVolumeReportToCSV
-
-  function exportToPDFWithOptions() {
-    // Создаем модальное окно с опциями экспорта
-    const modalHTML = `
-        <div id="pdfExportModal" class="modal" style="display:flex;">
-            <div class="modal-content" style="max-width: 400px;">
-                <div class="modal-header">
-                    <h3>📄 Экспорт в PDF</h3>
-                    <button class="close-btn" onclick="closePDFExportModal()">×</button>
-                </div>
-                <div class="modal-body">
-                    <div class="property-group">
-                        <h4>Настройки экспорта</h4>
-                        
-                        <div class="property-row">
-                            <div class="property-label">
-                                <label for="pdfFileName">Имя файла:</label>
-                            </div>
-                            <div class="property-value">
-                                <input type="text" id="pdfFileName" value="чертеж_${new Date().toISOString().slice(0, 10)}" style="width:100%;">
-                            </div>
-                        </div>
-
-                        <div class="property-row">
-                            <div class="property-label">
-                                <label for="pdfFormat">Формат страницы:</label>
-                            </div>
-                            <div class="property-value">
-                                <select id="pdfFormat" style="width:100%;">
-                                    <option value="a4">A4</option>
-                                    <option value="a3">A3</option>
-                                    <option value="letter">Letter</option>
-                                </select>
-                            </div>
-                        </div>
-
-                        <div class="property-row">
-                            <div class="property-label">
-                                <label for="pdfOrientation">Ориентация:</label>
-                            </div>
-                            <div class="property-value">
-                                <select id="pdfOrientation" style="width:100%;">
-                                    <option value="portrait">Книжная</option>
-                                    <option value="landscape">Альбомная</option>
-                                </select>
-                            </div>
-                        </div>
-
-                        <div class="property-row">
-                            <div class="property-label">
-                                <label for="pdfQuality">Качество:</label>
-                            </div>
-                            <div class="property-value">
-                                <select id="pdfQuality" style="width:100%;">
-                                    <option value="1">Обычное</option>
-                                    <option value="2">Высокое</option>
-                                    <option value="3">Максимальное</option>
-                                </select>
-                            </div>
-                        </div>
-
-                        <div class="property-row">
-                            <div class="property-label">
-                                <label for="includeGrid">Включать сетку:</label>
-                            </div>
-                            <div class="property-value">
-                                <input type="checkbox" id="includeGrid" checked>
-                            </div>
-                        </div>
-
-                        <div class="property-row">
-                            <div class="property-label">
-                                <label for="includeAirVolumes">Включать объемы воздуха:</label>
-                            </div>
-                            <div class="property-value">
-                                <input type="checkbox" id="includeAirVolumes" checked>
-                            </div>
-                        </div>
-
-                        <div class="property-row">
-                            <div class="property-label">
-                                <label for="includeIntersections">Включать точки пересечений:</label>
-                            </div>
-                            <div class="property-value">
-                                <input type="checkbox" id="includeIntersections" checked>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                <div class="modal-footer">
-                    <button onclick="exportToPDF()" class="btn btn-primary">
-                        <span>📥</span> Экспорт
-                    </button>
-                    <button onclick="closePDFExportModal()" class="btn btn-secondary">Отмена</button>
-                </div>
-            </div>
-        </div>
-    `;
-
-    // Удаляем существующее модальное окно, если есть
-    const existingModal = document.getElementById('pdfExportModal');
-    if (existingModal) {
-      existingModal.remove();
-    }
-
-    // Добавляем новое модальное окно
-    document.body.insertAdjacentHTML('beforeend', modalHTML);
-  }
-
-  function closePDFExportModal() {
-    const modal = document.getElementById('pdfExportModal');
-    if (modal) {
-      modal.remove();
-    }
-  }
-
-  function exportToPDF() {
-    try {
-      const fileName = document.getElementById('pdfFileName')?.value || 'чертеж';
-      const format = document.getElementById('pdfFormat')?.value || 'a4';
-      const orientation = document.getElementById('pdfOrientation')?.value || 'landscape';
-      const quality = parseInt(document.getElementById('pdfQuality')?.value) || 2;
-      const includeGrid = document.getElementById('includeGrid')?.checked !== false;
-      const includeAirVolumes = document.getElementById('includeAirVolumes')?.checked !== false;
-      const includeIntersections = document.getElementById('includeIntersections')?.checked !== false;
-
-      // Показываем индикатор загрузки
-      showNotification('Генерация PDF...', 'info', 2000);
-
-      // Сохраняем текущее состояние видимости
-      const gridGroup = canvas.getObjects().find(obj => obj.id === 'grid-group');
-      const airVolumeTexts = canvas.getObjects().filter(obj => obj.id === 'air-volume-text');
-      const intersectionPoints = canvas.getObjects().filter(obj => obj.id === 'intersection-point' || obj.id === 'intersection-point-label');
-
-      // Временно скрываем элементы, если нужно
-      if (!includeGrid && gridGroup) {
-        gridGroup.set('visible', false);
-      }
-
-      if (!includeAirVolumes) {
-        airVolumeTexts.forEach(text => text.set('visible', false));
-      }
-
-      if (!includeIntersections) {
-        intersectionPoints.forEach(point => point.set('visible', false));
-      }
-
-      // Перерисовываем canvas
-      canvas.renderAll();
-
-      // Создаем PDF
-      if (typeof window.jspdf === 'undefined') {
-        throw new Error('Библиотека jsPDF не загружена');
-      }
-
-      const {jsPDF} = window.jspdf;
-
-      // Определяем размеры страницы
-      let width, height;
-      switch (format) {
-        case 'a4':
-          width = orientation === 'portrait' ? 210 : 297;
-          height = orientation === 'portrait' ? 297 : 210;
-          break;
-        case 'a3':
-          width = orientation === 'portrait' ? 297 : 420;
-          height = orientation === 'portrait' ? 420 : 297;
-          break;
-        case 'letter':
-          width = orientation === 'portrait' ? 216 : 279;
-          height = orientation === 'portrait' ? 279 : 216;
-          break;
-        default:
-          width = 210;
-          height = 297;
-      }
-
-      const pdf = new jsPDF({
-        orientation: orientation,
-        unit: 'mm',
-        format: format
-      });
-
-      // Получаем изображение canvas
-      const canvasElement = canvas.getElement();
-      const imgData = canvasElement.toDataURL('image/png', quality * 0.33); // Качество: 0.33, 0.66, 1.0
-
-      // Рассчитываем размер изображения на странице (с отступами)
-      const margin = 10;
-      const imgWidth = width - 2 * margin;
-      const imgHeight = (canvasElement.height * imgWidth) / canvasElement.width;
-
-      // Добавляем изображение в PDF
-      pdf.addImage(imgData, 'PNG', margin, margin, imgWidth, imgHeight);
-
-      // Добавляем метаданные
-      pdf.setFontSize(8);
-      pdf.setTextColor(100, 100, 100);
-      pdf.text(`Сгенерировано: ${new Date().toLocaleString()}`, margin, height - margin - 5);
-      pdf.text(`Всего объектов: ${canvas.getObjects().length}`, margin, height - margin);
-
-      // Сохраняем PDF
-      pdf.save(`${fileName}.pdf`);
-
-      // Восстанавливаем видимость элементов
-      if (!includeGrid && gridGroup) {
-        gridGroup.set('visible', true);
-      }
-
-      if (!includeAirVolumes) {
-        airVolumeTexts.forEach(text => text.set('visible', true));
-      }
-
-      if (!includeIntersections) {
-        intersectionPoints.forEach(point => point.set('visible', true));
-      }
-
-      canvas.renderAll();
-
-      // Закрываем модальное окно
-      closePDFExportModal();
-
-      showNotification('PDF успешно создан!', 'success');
-    } catch (error) {
-      console.error('Ошибка при создании PDF:', error);
-      showNotification('Ошибка при создании PDF: ' + error.message, 'error');
-    }
-  }
-
-// Упрощенная функция экспорта (без опций)
-  function quickExportToPDF() {
-    try {
-      showNotification('Генерация PDF...', 'info', 2000);
-
-      if (typeof window.jspdf === 'undefined') {
-        throw new Error('Библиотека jsPDF не загружена');
-      }
-
-      const {jsPDF} = window.jspdf;
-      const pdf = new jsPDF({
-        orientation: 'landscape',
-        unit: 'px',
-        format: [canvas.width, canvas.height]
-      });
-
-      const canvasElement = canvas.getElement();
-      const imgData = canvasElement.toDataURL('image/png', 1.0);
-
-      pdf.addImage(imgData, 'PNG', 0, 0, canvas.width, canvas.height);
-      pdf.save(`чертеж_${new Date().toISOString().slice(0, 10)}.pdf`);
-
-      showNotification('PDF успешно создан!', 'success');
-    } catch (error) {
-      console.error('Ошибка при создании PDF:', error);
-      showNotification('Ошибка при создании PDF: ' + error.message, 'error');
-    }
-  }
-
-// Добавляем функции в глобальную область видимости
-  window.exportToPDFWithOptions = exportToPDFWithOptions;
-  window.closePDFExportModal = closePDFExportModal;
-  window.exportToPDF = exportToPDF;
-  window.quickExportToPDF = quickExportToPDF;
-
   const encodedUri = encodeURI(csvContent);
   const link = document.createElement("a");
   link.setAttribute("href", encodedUri);
@@ -4792,6 +4525,264 @@ function exportAirVolumeReportToCSV() {
   document.body.removeChild(link);
 
   showNotification('Отчет экспортирован в CSV', 'success');
+}
+
+// ==================== ЭКСПОРТ В PDF ====================
+function exportToPDFWithOptions() {
+  // Создаем модальное окно с опциями экспорта
+  const modalHTML = `
+    <div id="pdfExportModal" class="modal" style="display:flex;">
+      <div class="modal-content" style="max-width: 400px;">
+        <div class="modal-header">
+          <h3>📄 Экспорт в PDF</h3>
+          <button class="close-btn" onclick="closePDFExportModal()">×</button>
+        </div>
+        <div class="modal-body">
+          <div class="property-group">
+            <h4>Настройки экспорта</h4>
+            
+            <div class="property-row">
+              <div class="property-label">
+                <label for="pdfFileName">Имя файла:</label>
+              </div>
+              <div class="property-value">
+                <input type="text" id="pdfFileName" value="чертеж_${new Date().toISOString().slice(0, 10)}" style="width:100%;">
+              </div>
+            </div>
+
+            <div class="property-row">
+              <div class="property-label">
+                <label for="pdfFormat">Формат страницы:</label>
+              </div>
+              <div class="property-value">
+                <select id="pdfFormat" style="width:100%;">
+                  <option value="a4">A4</option>
+                  <option value="a3">A3</option>
+                  <option value="letter">Letter</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="property-row">
+              <div class="property-label">
+                <label for="pdfOrientation">Ориентация:</label>
+              </div>
+              <div class="property-value">
+                <select id="pdfOrientation" style="width:100%;">
+                  <option value="portrait">Книжная</option>
+                  <option value="landscape" selected>Альбомная</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="property-row">
+              <div class="property-label">
+                <label for="pdfQuality">Качество:</label>
+              </div>
+              <div class="property-value">
+                <select id="pdfQuality" style="width:100%;">
+                  <option value="1">Обычное</option>
+                  <option value="2" selected>Высокое</option>
+                  <option value="3">Максимальное</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="property-row">
+              <div class="property-label">
+                <label for="includeGrid">Включать сетку:</label>
+              </div>
+              <div class="property-value">
+                <input type="checkbox" id="includeGrid" checked>
+              </div>
+            </div>
+
+            <div class="property-row">
+              <div class="property-label">
+                <label for="includeAirVolumes">Включать объемы воздуха:</label>
+              </div>
+              <div class="property-value">
+                <input type="checkbox" id="includeAirVolumes" checked>
+              </div>
+            </div>
+
+            <div class="property-row">
+              <div class="property-label">
+                <label for="includeIntersections">Включать точки пересечений:</label>
+              </div>
+              <div class="property-value">
+                <input type="checkbox" id="includeIntersections" checked>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button onclick="exportToPDF()" class="btn btn-primary">
+            <span>📥</span> Экспорт
+          </button>
+          <button onclick="closePDFExportModal()" class="btn btn-secondary">Отмена</button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  // Удаляем существующее модальное окно, если есть
+  const existingModal = document.getElementById('pdfExportModal');
+  if (existingModal) {
+    existingModal.remove();
+  }
+
+  // Добавляем новое модальное окно
+  document.body.insertAdjacentHTML('beforeend', modalHTML);
+}
+
+function closePDFExportModal() {
+  const modal = document.getElementById('pdfExportModal');
+  if (modal) {
+    modal.remove();
+  }
+}
+
+function exportToPDF() {
+  try {
+    const fileName = document.getElementById('pdfFileName')?.value || 'чертеж';
+    const format = document.getElementById('pdfFormat')?.value || 'a4';
+    const orientation = document.getElementById('pdfOrientation')?.value || 'landscape';
+    const quality = parseInt(document.getElementById('pdfQuality')?.value) || 2;
+    const includeGrid = document.getElementById('includeGrid')?.checked !== false;
+    const includeAirVolumes = document.getElementById('includeAirVolumes')?.checked !== false;
+    const includeIntersections = document.getElementById('includeIntersections')?.checked !== false;
+
+    // Показываем индикатор загрузки
+    showNotification('Генерация PDF...', 'info', 2000);
+
+    // Сохраняем текущее состояние видимости
+    const gridGroup = canvas.getObjects().find(obj => obj.id === 'grid-group');
+    const airVolumeTexts = canvas.getObjects().filter(obj => obj.id === 'air-volume-text');
+    const intersectionPoints = canvas.getObjects().filter(obj => obj.id === 'intersection-point' || obj.id === 'intersection-point-label');
+
+    // Временно скрываем элементы, если нужно
+    if (!includeGrid && gridGroup) {
+      gridGroup.set('visible', false);
+    }
+
+    if (!includeAirVolumes) {
+      airVolumeTexts.forEach(text => text.set('visible', false));
+    }
+
+    if (!includeIntersections) {
+      intersectionPoints.forEach(point => point.set('visible', false));
+    }
+
+    // Перерисовываем canvas
+    canvas.renderAll();
+
+    // Создаем PDF
+    if (typeof window.jspdf === 'undefined') {
+      throw new Error('Библиотека jsPDF не загружена');
+    }
+
+    const {jsPDF} = window.jspdf;
+
+    // Определяем размеры страницы
+    let width, height;
+    switch (format) {
+      case 'a4':
+        width = orientation === 'portrait' ? 210 : 297;
+        height = orientation === 'portrait' ? 297 : 210;
+        break;
+      case 'a3':
+        width = orientation === 'portrait' ? 297 : 420;
+        height = orientation === 'portrait' ? 420 : 297;
+        break;
+      case 'letter':
+        width = orientation === 'portrait' ? 216 : 279;
+        height = orientation === 'portrait' ? 279 : 216;
+        break;
+      default:
+        width = 210;
+        height = 297;
+    }
+
+    const pdf = new jsPDF({
+      orientation: orientation,
+      unit: 'mm',
+      format: format
+    });
+
+    // Получаем изображение canvas
+    const canvasElement = canvas.getElement();
+    const imgData = canvasElement.toDataURL('image/png', quality * 0.33); // Качество: 0.33, 0.66, 1.0
+
+    // Рассчитываем размер изображения на странице (с отступами)
+    const margin = 10;
+    const imgWidth = width - 2 * margin;
+    const imgHeight = (canvasElement.height * imgWidth) / canvasElement.width;
+
+    // Добавляем изображение в PDF
+    pdf.addImage(imgData, 'PNG', margin, margin, imgWidth, imgHeight);
+
+    // Добавляем метаданные
+    pdf.setFontSize(8);
+    pdf.setTextColor(100, 100, 100);
+    pdf.text(`Сгенерировано: ${new Date().toLocaleString()}`, margin, height - margin - 5);
+    pdf.text(`Всего объектов: ${canvas.getObjects().length}`, margin, height - margin);
+
+    // Сохраняем PDF
+    pdf.save(`${fileName}.pdf`);
+
+    // Восстанавливаем видимость элементов
+    if (!includeGrid && gridGroup) {
+      gridGroup.set('visible', true);
+    }
+
+    if (!includeAirVolumes) {
+      airVolumeTexts.forEach(text => text.set('visible', true));
+    }
+
+    if (!includeIntersections) {
+      intersectionPoints.forEach(point => point.set('visible', true));
+    }
+
+    canvas.renderAll();
+
+    // Закрываем модальное окно
+    closePDFExportModal();
+
+    showNotification('PDF успешно создан!', 'success');
+  } catch (error) {
+    console.error('Ошибка при создании PDF:', error);
+    showNotification('Ошибка при создании PDF: ' + error.message, 'error');
+  }
+}
+
+// Упрощенная функция экспорта (без опций)
+function quickExportToPDF() {
+  try {
+    showNotification('Генерация PDF...', 'info', 2000);
+
+    if (typeof window.jspdf === 'undefined') {
+      throw new Error('Библиотека jsPDF не загружена');
+    }
+
+    const {jsPDF} = window.jspdf;
+    const pdf = new jsPDF({
+      orientation: 'landscape',
+      unit: 'px',
+      format: [canvas.width, canvas.height]
+    });
+
+    const canvasElement = canvas.getElement();
+    const imgData = canvasElement.toDataURL('image/png', 1.0);
+
+    pdf.addImage(imgData, 'PNG', 0, 0, canvas.width, canvas.height);
+    pdf.save(`чертеж_${new Date().toISOString().slice(0, 10)}.pdf`);
+
+    showNotification('PDF успешно создан!', 'success');
+  } catch (error) {
+    console.error('Ошибка при создании PDF:', error);
+    showNotification('Ошибка при создании PDF: ' + error.message, 'error');
+  }
 }
 
 // ==================== ЭКСПОРТ ГЛОБАЛЬНЫХ ФУНКЦИЙ ====================
@@ -4818,5 +4809,9 @@ window.splitLineAtPoint = splitLineAtPoint;
 window.checkFlowBalance = checkFlowBalance;
 window.createTestScenarioComplex = createTestScenarioComplex;
 window.splitAllLinesBeforeCalculation = splitAllLinesBeforeCalculation;
+window.exportToPDFWithOptions = exportToPDFWithOptions;
+window.closePDFExportModal = closePDFExportModal;
+window.exportToPDF = exportToPDF;
+window.quickExportToPDF = quickExportToPDF;
 
 console.log('Редактор технических чертежей загружен с исправленным расчетом воздушных потоков для непрерывного режима!');

@@ -6,6 +6,9 @@
   <script src="./js/fabric-min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+
+  <!-- Библиотеки для экспорта в PDF -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <link
     rel="stylesheet"
     href="./styles/style2.css"
@@ -93,8 +96,15 @@
           <button onclick="showObjectPropertiesModal()">
             <span>⚙️</span> Свойства объекта
           </button>
-          <button onclick="exportToPDFWithOptions()">
-            <span>📄</span> Сохранить в PDF
+<!--          <button onclick="exportToPDFWithOptions()">-->
+<!--            <span>📄</span> Сохранить в PDF-->
+<!--          </button>-->
+          <button onclick="exportToPDFWithOptions()" class="toolbar-btn" title="Экспорт в PDF">
+            <span>📄</span> PDF
+          </button>
+
+          <button onclick="quickExportToPDF()" class="toolbar-btn" title="Быстрый экспорт в PDF">
+            <span>📄</span> PDF
           </button>
           <button onclick="showAddImageModal()">
             <span>➕</span> Добавить изображение
@@ -712,6 +722,7 @@
 <!--<script src="./js/pereschot-09-02-2026-2-optimiz-1.js"></script>-->
 <!--<script src="./js/pereschot-09-02-2026-2-optimiz-2.js"></script>-->
 <!--<script src="./js/js-10-02.js"></script>-->
-<script src="./js/js-15-02.js"></script>
+<!--<script src="./js/js-15-02.js"></script>-->
+<script src="./js/js-15-02-2.js"></script>
 </body>
 </html>
