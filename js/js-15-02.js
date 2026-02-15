@@ -1790,11 +1790,13 @@ function handleCanvasMouseDown(options) {
   }
 }
 
+// ИСПРАВЛЕННАЯ ФУНКЦИЯ ДЛЯ НАЧАЛА РИСОВАНИЯ ЛИНИИ
 function handleLineDrawingStart(options, pointer) {
   if (!lineStartPoint) {
     let snappedX, snappedY;
     let startPointFromObject = null;
 
+    // Проверяем наличие объекта под курсором с зажатым Alt
     if (altKeyPressed && options.target) {
       const targetObject = options.target;
       const objectEdgePoint = findClosestPointOnObjectEdge(targetObject, pointer);
@@ -1815,7 +1817,37 @@ function handleLineDrawingStart(options, pointer) {
       snappedY = roundTo5(snapToGrid(pointer.y, APP_CONFIG.GRID_SIZE));
     }
 
-    if (!altKeyPressed) {
+    // ВАЖНО: Проверяем существующие узлы
+    const nodeAtStartPoint = isPointInLockedNode(snappedX, snappedY);
+    if (nodeAtStartPoint) {
+      snappedX = nodeAtStartPoint.node.x;
+      snappedY = nodeAtStartPoint.node.y;
+
+      // Ищем объекты в этом узле для привязки
+      const objectsAtNode = [];
+      getCachedImages().forEach(img => {
+        const center = getObjectCenter(img);
+        const distance = Math.sqrt(
+          Math.pow(center.x - snappedX, 2) +
+          Math.pow(center.y - snappedY, 2)
+        );
+        if (distance < 30) {
+          objectsAtNode.push(img);
+        }
+      });
+
+      if (objectsAtNode.length > 0 && !startPointFromObject) {
+        startPointFromObject = {
+          x: snappedX,
+          y: snappedY,
+          object: objectsAtNode[0],
+          edgePoint: true
+        };
+      }
+    }
+
+    // Если не в ручном режиме, проверяем линии для разделения
+    if (!altKeyPressed && lineSplitMode !== 'MANUAL' && !nodeAtStartPoint) {
       const lineAtPoint = findLineAtPoint(pointer);
       if (lineAtPoint && !lineAtPoint.isEnd) {
         const splitResult = splitLineAtPoint(lineAtPoint.line, lineAtPoint.point);
@@ -1900,6 +1932,7 @@ function handleLineDrawingStart(options, pointer) {
   }
 }
 
+// ИСПРАВЛЕННАЯ ФУНКЦИЯ ДЛЯ ЗАВЕРШЕНИЯ РИСОВАНИЯ ЛИНИИ
 function handleLineDrawingEnd(options, pointer) {
   let snappedX, snappedY;
   let endPointFromObject = null;
@@ -1924,7 +1957,17 @@ function handleLineDrawingEnd(options, pointer) {
     snappedY = roundTo5(snapToGrid(pointer.y, APP_CONFIG.GRID_SIZE));
   }
 
-  if (!altKeyPressed) {
+  // ВАЖНО: Проверяем, не попадает ли конечная точка на существующий узел
+  const nodeAtEndPoint = isPointInLockedNode(snappedX, snappedY);
+  if (nodeAtEndPoint) {
+    // Используем координаты существующего узла
+    snappedX = nodeAtEndPoint.node.x;
+    snappedY = nodeAtEndPoint.node.y;
+    console.log('Конечная точка привязана к существующему узлу');
+  }
+
+  // Проверяем, не попадает ли конечная точка на существующую линию (для разделения)
+  if (!altKeyPressed && !nodeAtEndPoint) {
     const lineAtEndPoint = findLineAtPoint({x: snappedX, y: snappedY});
     if (lineAtEndPoint && !lineAtEndPoint.isEnd) {
       const splitResult = splitLineAtPoint(lineAtEndPoint.line, lineAtEndPoint.point);
@@ -1939,12 +1982,16 @@ function handleLineDrawingEnd(options, pointer) {
 
         createOrUpdateAirVolumeText(splitResult.line1);
         createOrUpdateAirVolumeText(splitResult.line2);
+
+        // Обновляем координаты для новой линии
+        snappedX = lineAtEndPoint.point.x;
+        snappedY = lineAtEndPoint.point.y;
       }
     }
   }
 
+  // Создаем новую линию
   const length = roundTo5(Math.sqrt(Math.pow(snappedX - lineStartPoint.x, 2) + Math.pow(snappedY - lineStartPoint.y, 2)));
-
   const lineId = generateLineId();
 
   const passageLength = roundTo5(parseFloat(document.getElementById('propertyPassageLength')?.value) || 0.5);
@@ -2004,11 +2051,10 @@ function handleLineDrawingEnd(options, pointer) {
 
   calculateAllLineProperties(finalLine);
 
-  setTimeout(() => {
-    invalidateCache();
-    updateConnectionGraph();
-    updateAllAirVolumeTexts();
-  }, 100);
+  // НЕМЕДЛЕННО обновляем граф и тексты
+  invalidateCache();
+  buildConnectionGraph(); // Синхронное обновление графа
+  updateAllAirVolumeTexts();
 
   scheduleRender();
   updatePropertiesPanel();
@@ -2017,12 +2063,41 @@ function handleLineDrawingEnd(options, pointer) {
   if (!isContinuousLineMode) {
     deactivateAllModes();
   } else {
+    // В непрерывном режиме: новая начальная точка = текущая конечная точка
     lineStartPoint = {
       x: snappedX,
       y: snappedY
     };
-    lastLineEndPoint = {x: snappedX, y: snappedY};
 
+    // Проверяем, не привязана ли новая начальная точка к объекту
+    if (options.target && altKeyPressed) {
+      lineStartPoint.object = options.target;
+      lineStartPoint.edgePoint = true;
+    } else {
+      // Проверяем, не находится ли точка в узле
+      const nodeAtStart = isPointInLockedNode(snappedX, snappedY);
+      if (nodeAtStart) {
+        // Ищем объекты в этом узле
+        const objectsAtNode = [];
+        getCachedImages().forEach(img => {
+          const center = getObjectCenter(img);
+          const distance = Math.sqrt(
+            Math.pow(center.x - snappedX, 2) +
+            Math.pow(center.y - snappedY, 2)
+          );
+          if (distance < 30) {
+            objectsAtNode.push(img);
+          }
+        });
+
+        if (objectsAtNode.length > 0) {
+          lineStartPoint.object = objectsAtNode[0];
+          lineStartPoint.edgePoint = true;
+        }
+      }
+    }
+
+    // Создаем новый превью для следующего сегмента
     previewLine = new fabric.Line([lineStartPoint.x, lineStartPoint.y, snappedX, snappedY], {
       stroke: APP_CONFIG.DEFAULT_LINE_COLOR,
       strokeWidth: 2,
@@ -2033,6 +2108,15 @@ function handleLineDrawingEnd(options, pointer) {
       isPreview: true
     });
     canvas.add(previewLine);
+
+    // Дополнительная проверка баланса для отладки
+    setTimeout(() => {
+      const lines = getCachedLines();
+      const lastLine = lines[lines.length - 1];
+      if (lastLine && lastLine.properties) {
+        console.log(`Создана линия ${lastLine.id} с объемом ${lastLine.properties.airVolume}`);
+      }
+    }, 50);
   }
 }
 
@@ -4468,4 +4552,4 @@ window.checkFlowBalance = checkFlowBalance;
 window.createTestScenarioComplex = createTestScenarioComplex;
 window.splitAllLinesBeforeCalculation = splitAllLinesBeforeCalculation;
 
-console.log('Редактор технических чертежей загружен с исправленным расчетом воздушных потоков!');
+console.log('Редактор технических чертежей загружен с исправленным расчетом воздушных потоков для непрерывного режима!');

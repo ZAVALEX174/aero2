@@ -1,4 +1,4 @@
-console.log("Исправленная версия с правильным расчетом воздушных потоков");
+console.log("Исправленная версия с независимым расчетом воздушных потоков");
 // ==================== КОНСТАНТЫ И ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ ====================
 const APP_CONFIG = {
   GRID_SIZE: 20,
@@ -462,6 +462,12 @@ document.addEventListener('DOMContentLoaded', function () {
   document.getElementById('calculateAirBtn')?.addEventListener('click', function () {
     if (!isCalculatingAirVolumes) {
       console.log('Запуск расчета объемов воздуха по клику кнопки...');
+
+      // Опционально: принудительное разбиение линий перед расчетом
+      if (confirm('Разбить все линии перед расчетом для более точного результата?')) {
+        splitAllLinesBeforeCalculation();
+      }
+
       calculateAirVolumesForAllLines(true);
     } else {
       showNotification('Расчет уже выполняется, подождите...', 'warning');
@@ -473,6 +479,22 @@ document.addEventListener('DOMContentLoaded', function () {
     analyzeIntersectionPoints();
   });
 
+  // Добавляем кнопку для сложного теста
+  const testBtn = document.createElement('button');
+  testBtn.innerHTML = '<span>🧪</span> Сложный тест';
+  testBtn.className = 'toolbar-btn';
+  testBtn.title = 'Создать сложный тестовый сценарий';
+  testBtn.onclick = createTestScenarioComplex;
+  document.querySelector('.toolbar')?.appendChild(testBtn);
+
+  // Добавляем кнопку для проверки баланса
+  const balanceBtn = document.createElement('button');
+  balanceBtn.innerHTML = '<span>⚖️</span> Проверить баланс';
+  balanceBtn.className = 'toolbar-btn';
+  balanceBtn.title = 'Проверить баланс потоков в сети';
+  balanceBtn.onclick = checkFlowBalance;
+  document.querySelector('.toolbar')?.appendChild(balanceBtn);
+
   window.addEventListener('resize', handleResize);
   console.log('Редактор технических чертежей загружен!');
 
@@ -480,14 +502,21 @@ document.addEventListener('DOMContentLoaded', function () {
 });
 
 function updatePerformanceMetrics() {
-  console.log('📊 Метрики производительности:');
-  console.log(`Объектов: ${performanceMetrics.objectCount}`);
-  console.log(`Последнее обновление графа: ${performanceMetrics.lastGraphUpdateTime.toFixed(2)}ms`);
-  console.log(`Последний расчет пересечений: ${performanceMetrics.lastIntersectionTime.toFixed(2)}ms`);
-
-  if (performanceMetrics.objectCount > APP_CONFIG.MAX_OBJECTS * 0.8) {
-    console.warn(`Внимание: много объектов (${performanceMetrics.objectCount}). Производительность может снизиться.`);
+  const metricsDiv = document.getElementById('performanceMetrics');
+  if (!metricsDiv) {
+    metricsDiv = document.createElement('div');
+    metricsDiv.id = 'performanceMetrics';
+    metricsDiv.style.cssText = 'position:fixed;bottom:10px;right:10px;background:rgba(0,0,0,0.7);color:white;padding:5px;font-size:10px;z-index:1000;border-radius:3px;';
+    document.body.appendChild(metricsDiv);
   }
+
+  metricsDiv.innerHTML = `
+    📊 Объектов: ${performanceMetrics.objectCount}<br>
+    📏 Линий: ${getCachedLines().length}<br>
+    🏭 Изображений: ${getCachedImages().length}<br>
+    ⚡ Граф: ${performanceMetrics.lastGraphUpdateTime.toFixed(1)}ms<br>
+    ✂️ Пересечения: ${performanceMetrics.lastIntersectionTime.toFixed(1)}ms
+  `;
 }
 
 function initializeCanvas() {
@@ -1140,8 +1169,9 @@ function splitLineAtPoint(line, point) {
   return {line1, line2};
 }
 
-// ==================== НОВАЯ ФУНКЦИЯ РАСЧЕТА ВОЗДУШНЫХ ПОТОКОВ ====================
-// ==================== НОВАЯ ФУНКЦИЯ РАСЧЕТА ВОЗДУШНЫХ ПОТОКОВ ====================
+// ==================== НОВАЯ СИСТЕМА РАСЧЕТА ВОЗДУШНЫХ ПОТОКОВ (НЕЗАВИСИМАЯ) ====================
+
+// ==================== ИСПРАВЛЕННАЯ ФУНКЦИЯ РАСЧЕТА ВОЗДУШНЫХ ПОТОКОВ ====================
 function calculateAirVolumesForAllLines(isManual = false) {
   if (!isManual) {
     console.log('Расчет вызван не через кнопку, пропускаем');
@@ -1154,274 +1184,70 @@ function calculateAirVolumesForAllLines(isManual = false) {
   }
 
   isCalculatingAirVolumes = true;
-  console.log('=== НАЧИНАЕМ РАСЧЕТ ВОЗДУШНЫХ ПОТОКОВ ===');
+  console.log('=== НАЧИНАЕМ РАСЧЕТ ВОЗДУШНЫХ ПОТОКОВ (СОВЕРШЕННО НЕЗАВИСИМЫЙ АЛГОРИТМ) ===');
 
   try {
     const lines = getCachedLines();
     const images = getCachedImages();
 
-    // Сброс текущих значений
-    lines.forEach(line => {
-      if (line.properties) {
-        line.properties.airVolume = 0;
-        line.set('properties', line.properties);
-      }
-    });
+    // 1. ШАГ: ПОСТРОЕНИЕ ПОЛНОГО ГРАФА СЕТИ
+    console.log('1. Построение графа сети...');
+    const graph = buildCompleteGraph(lines, images);
 
-    // Создаем карту точек пересечения (узлов)
-    const nodes = new Map();
-
-    // Собираем все точки (начала и концы линий)
-    lines.forEach(line => {
-      const startKey = `${roundTo5(line.x1)}_${roundTo5(line.y1)}`;
-      const endKey = `${roundTo5(line.x2)}_${roundTo5(line.y2)}`;
-
-      // Начальная точка
-      if (!nodes.has(startKey)) {
-        nodes.set(startKey, {
-          id: startKey,
-          x: roundTo5(line.x1),
-          y: roundTo5(line.y1),
-          linesStarting: [],  // Линии, которые начинаются в этой точке
-          linesEnding: [],    // Линии, которые заканчиваются в этой точке
-          objects: [],        // Объекты в этой точке
-          totalIncoming: 0,   // Суммарный входящий поток
-          totalOutgoing: 0,   // Суммарный исходящий поток
-          processed: false    // Флаг обработки узла
-        });
-      }
-
-      const startNode = nodes.get(startKey);
-      startNode.linesStarting.push({
-        line: line,
-        airVolume: 0,
-        isStart: true,
-        resistance: line.properties?.airResistance || 1
-      });
-
-      // Конечная точка
-      if (!nodes.has(endKey)) {
-        nodes.set(endKey, {
-          id: endKey,
-          x: roundTo5(line.x2),
-          y: roundTo5(line.y2),
-          linesStarting: [],
-          linesEnding: [],
-          objects: [],
-          totalIncoming: 0,
-          totalOutgoing: 0,
-          processed: false
-        });
-      }
-
-      const endNode = nodes.get(endKey);
-      endNode.linesEnding.push({
-        line: line,
-        airVolume: 0,
-        isStart: false,
-        resistance: line.properties?.airResistance || 1
-      });
-    });
-
-    // Привязываем объекты к ближайшим узлам
-    images.forEach(img => {
-      const center = getObjectCenter(img);
-      let closestNode = null;
-      let minDistance = Infinity;
-
-      // Ищем ближайший узел
-      nodes.forEach(node => {
-        const distance = Math.sqrt(
-          Math.pow(node.x - center.x, 2) + Math.pow(node.y - center.y, 2)
-        );
-
-        if (distance < minDistance && distance < 50) {
-          minDistance = distance;
-          closestNode = node;
-        }
-      });
-
-      if (closestNode) {
-        closestNode.objects.push({
-          object: img,
-          name: img.properties?.name || 'Объект',
-          airVolume: img.properties?.airVolume || 0,
-          airResistance: img.properties?.airResistance || 1
-        });
-      }
-    });
-
-    // Функция для обработки узла с учетом всех входящих линий
-    function processNode(nodeId) {
-      const node = nodes.get(nodeId);
-      if (!node || node.processed) return;
-
-      node.processed = true;
-      console.log(`\nОбрабатываем узел ${nodeId}:`);
-      console.log(`  Объектов: ${node.objects.length}`);
-      console.log(`  Линий начинается: ${node.linesStarting.length}`);
-      console.log(`  Линий заканчивается: ${node.linesEnding.length}`);
-
-      // Суммируем все входящие объемы воздуха
-      let totalIncomingVolume = 0;
-      node.linesEnding.forEach(lineInfo => {
-        if (lineInfo.line.properties?.airVolume) {
-          totalIncomingVolume += lineInfo.line.properties.airVolume;
-        }
-      });
-
-      console.log(`  Суммарный входящий объем: ${totalIncomingVolume.toFixed(3)} м³/с`);
-
-      // Если есть входящие линии - обрабатываем их
-      if (totalIncomingVolume > 0) {
-        let volumeForDistribution = totalIncomingVolume;
-
-        // Учитываем сопротивление объектов в узле (СЛУЧАЙ 5/6)
-        if (node.objects.length > 0) {
-          const obj = node.objects[0];
-          if (obj.airResistance > 0) {
-            volumeForDistribution = volumeForDistribution / obj.airResistance;
-            console.log(`  Учитываем сопротивление объекта ${obj.airResistance}: ${volumeForDistribution.toFixed(3)} м³/с`);
-          }
-        }
-
-        // СЛУЧАЙ 3: Если в точку приходит одна линия концом и отходит одна линия началом
-        if (node.linesEnding.length === 1 && node.linesStarting.length === 1) {
-          const outgoingLine = node.linesStarting[0].line;
-          outgoingLine.properties.airVolume = roundTo5(volumeForDistribution);
-          outgoingLine.set('properties', outgoingLine.properties);
-          console.log(`  СЛУЧАЙ 3: Весь объем ${volumeForDistribution.toFixed(3)} передан исходящей линии`);
-        }
-
-        // СЛУЧАЙ 4: Если в точку приходит одна линия концом и несколько линий началом
-        else if (node.linesEnding.length === 1 && node.linesStarting.length > 1) {
-          let totalConductivity = 0;
-          node.linesStarting.forEach(lineInfo => {
-            if (lineInfo.resistance > 0) {
-              totalConductivity += 1 / lineInfo.resistance;
-            }
-          });
-
-          if (totalConductivity > 0) {
-            node.linesStarting.forEach(lineInfo => {
-              if (lineInfo.resistance > 0) {
-                const conductivity = 1 / lineInfo.resistance;
-                const lineVolume = roundTo5(volumeForDistribution * (conductivity / totalConductivity));
-                lineInfo.line.properties.airVolume = lineVolume;
-                lineInfo.line.set('properties', lineInfo.line.properties);
-                console.log(`  СЛУЧАЙ 4: Линия получает ${lineVolume.toFixed(3)} (R=${lineInfo.resistance})`);
-              }
-            });
-          }
-        }
-
-        // СЛУЧАЙ 7: Если в точку приходит две и более линий концом и отходит одна линия началом
-        else if (node.linesEnding.length >= 2 && node.linesStarting.length === 1) {
-          const outgoingLine = node.linesStarting[0].line;
-          outgoingLine.properties.airVolume = roundTo5(volumeForDistribution);
-          outgoingLine.set('properties', outgoingLine.properties);
-          console.log(`  СЛУЧАЙ 7: Суммарный объем ${totalIncomingVolume.toFixed(3)} -> ${volumeForDistribution.toFixed(3)} передан исходящей линии`);
-        }
-      }
-
-      // Обрабатываем источники (объекты с воздухом)
-      if (node.objects.length > 0 && node.objects[0].airVolume > 0) {
-        const obj = node.objects[0];
-        let sourceVolume = obj.airVolume;
-
-        // Учитываем сопротивление объекта (СЛУЧАЙ 5/6)
-        if (obj.airResistance > 0) {
-          sourceVolume = sourceVolume / obj.airResistance;
-          console.log(`  Источник с сопротивлением ${obj.airResistance}: ${sourceVolume.toFixed(3)} м³/с`);
-        }
-
-        // СЛУЧАЙ 1: Если от объекта отходит одна линия
-        if (node.linesStarting.length === 1) {
-          const outgoingLine = node.linesStarting[0].line;
-          outgoingLine.properties.airVolume = roundTo5(sourceVolume);
-          outgoingLine.set('properties', outgoingLine.properties);
-          console.log(`  СЛУЧАЙ 1: Объект отдает весь объем ${sourceVolume.toFixed(3)} линии`);
-        }
-
-        // СЛУЧАЙ 2: Если от объекта отходит несколько линий
-        else if (node.linesStarting.length > 1) {
-          let totalConductivity = 0;
-          node.linesStarting.forEach(lineInfo => {
-            if (lineInfo.resistance > 0) {
-              totalConductivity += 1 / lineInfo.resistance;
-            }
-          });
-
-          if (totalConductivity > 0) {
-            node.linesStarting.forEach(lineInfo => {
-              if (lineInfo.resistance > 0) {
-                const conductivity = 1 / lineInfo.resistance;
-                const lineVolume = roundTo5(sourceVolume * (conductivity / totalConductivity));
-                lineInfo.line.properties.airVolume = lineVolume;
-                lineInfo.line.set('properties', lineInfo.line.properties);
-                console.log(`  СЛУЧАЙ 2: Линия получает ${lineVolume.toFixed(3)} (R=${lineInfo.resistance})`);
-              }
-            });
-          }
-        }
-      }
-
-      // Рекурсивно обрабатываем следующие узлы
-      node.linesStarting.forEach(lineInfo => {
-        const line = lineInfo.line;
-        const endKey = `${roundTo5(line.x2)}_${roundTo5(line.y2)}`;
-
-        // Проверяем, готова ли линия для передачи объема
-        if (line.properties?.airVolume > 0) {
-          processNode(endKey);
-        }
-      });
+    if (!graph.nodes.size) {
+      showNotification('Нет узлов для расчета!', 'warning');
+      isCalculatingAirVolumes = false;
+      return false;
     }
 
-    // Находим начальные узлы для обработки
-    const initialNodes = [];
-    nodes.forEach((node, key) => {
-      // Узлы с объектами-источниками
-      const hasSourceObject = node.objects.some(obj => obj.airVolume > 0);
+    // 2. ШАГ: ИДЕНТИФИКАЦИЯ ВСЕХ ИСТОЧНИКОВ ВОЗДУХА
+    console.log('2. Идентификация источников воздуха...');
+    const sources = identifyAllSources(graph);
 
-      // Узлы без входящих линий (начальные точки сети)
-      const hasNoIncomingLines = node.linesEnding.length === 0;
+    if (sources.length === 0) {
+      showNotification('Нет источников воздуха! Добавьте объекты с объемом воздуха > 0', 'warning');
+      isCalculatingAirVolumes = false;
+      return false;
+    }
 
-      if (hasSourceObject || hasNoIncomingLines) {
-        initialNodes.push(key);
-      }
-    });
+    // 3. ШАГ: РАСЧЕТ РАСПРЕДЕЛЕНИЯ ПОТОКОВ (МЕТОДОМ МАРШРУТИЗАЦИИ ПОТОКОВ)
+    console.log('3. Расчет распределения потоков...');
+    const results = calculateFlowDistribution(graph, sources);
 
-    console.log(`\nНачальных узлов для обработки: ${initialNodes.length}`);
+    if (!results.success) {
+      showNotification('Ошибка при расчете распределения: ' + results.error, 'error');
+      isCalculatingAirVolumes = false;
+      return false;
+    }
 
-    // Обрабатываем все начальные узлы
-    initialNodes.forEach(nodeKey => {
-      if (!nodes.get(nodeKey).processed) {
-        processNode(nodeKey);
-      }
-    });
+    // 4. ШАГ: ПРИМЕНЕНИЕ РЕЗУЛЬТАТОВ К ЛИНИЯМ
+    console.log('4. Применение результатов к линиям...');
+    applyFlowResultsToLines(lines, results.flows);
 
-    // Обновляем отображение
-    let updatedCount = 0;
-    lines.forEach(line => {
-      try {
-        if (line.properties && line.properties.airVolume !== undefined) {
-          createOrUpdateAirVolumeText(line);
-          updatedCount++;
-        }
-      } catch (err) {
-        console.warn('Ошибка при обновлении текста линии:', err);
-      }
-    });
+    // 5. ШАГ: ПРОВЕРКА И КОРРЕКЦИЯ БАЛАНСА
+    console.log('5. Проверка и коррекция баланса...');
+    correctFlowBalance(graph, lines);
 
+    // 6. ШАГ: ОБНОВЛЕНИЕ ОТОБРАЖЕНИЯ
+    console.log('6. Обновление отображения...');
     updateAllAirVolumeTexts();
     scheduleRender();
     updatePropertiesPanel();
 
-    console.log(`\nРасчет завершен! Обновлено ${updatedCount} линий`);
-    showNotification(`Расчет завершен! Обновлено ${updatedCount} линий`, 'success');
+    // СТАТИСТИКА
+    const totalFlow = calculateTotalFlow(lines);
+    console.log(`\n=== РАСЧЕТ ЗАВЕРШЕН ===`);
+    console.log(`Суммарный поток в системе: ${totalFlow.toFixed(3)} м³/с`);
+    console.log(`Обработано узлов: ${graph.nodes.size}`);
+    console.log(`Обработано линий: ${lines.length}`);
+    console.log(`Источников: ${sources.length}`);
 
-    return updatedCount > 0;
+    showNotification(`Расчет завершен! Суммарный поток: ${totalFlow.toFixed(3)} м³/с`, 'success');
+
+    // ПРОВЕРКА БАЛАНСА
+    checkFlowBalance();
+
+    return true;
 
   } catch (error) {
     console.error('ОШИБКА в calculateAirVolumesForAllLines:', error);
@@ -1430,6 +1256,566 @@ function calculateAirVolumesForAllLines(isManual = false) {
   } finally {
     isCalculatingAirVolumes = false;
   }
+}
+
+// Функция построения полного графа сети
+function buildCompleteGraph(lines, images) {
+  const nodes = new Map(); // Узлы графа
+  const edges = new Map(); // Ребра графа (линии)
+
+  // 1. Собираем ВСЕ узлы из ВСЕХ линий
+  lines.forEach(line => {
+    const startKey = `${roundTo5(line.x1)}_${roundTo5(line.y1)}`;
+    const endKey = `${roundTo5(line.x2)}_${roundTo5(line.y2)}`;
+
+    // Узел начала линии
+    if (!nodes.has(startKey)) {
+      nodes.set(startKey, {
+        id: startKey,
+        x: roundTo5(line.x1),
+        y: roundTo5(line.y1),
+        lines: [], // Все линии, связанные с этим узлом
+        objects: [], // Объекты в этом узле
+        isSource: false,
+        airVolume: 0,
+        incomingFlows: 0,
+        outgoingFlows: 0,
+        connectedNodes: new Set() // Связанные узлы
+      });
+    }
+
+    // Узел конца линии
+    if (!nodes.has(endKey)) {
+      nodes.set(endKey, {
+        id: endKey,
+        x: roundTo5(line.x2),
+        y: roundTo5(line.y2),
+        lines: [],
+        objects: [],
+        isSource: false,
+        airVolume: 0,
+        incomingFlows: 0,
+        outgoingFlows: 0,
+        connectedNodes: new Set()
+      });
+    }
+
+    // Регистрируем линию в обоих узлах
+    const startNode = nodes.get(startKey);
+    const endNode = nodes.get(endKey);
+
+    if (!startNode.lines.some(l => l.id === line.id)) {
+      startNode.lines.push(line);
+    }
+
+    if (!endNode.lines.some(l => l.id === line.id)) {
+      endNode.lines.push(line);
+    }
+
+    // Регистрируем связанность узлов
+    startNode.connectedNodes.add(endKey);
+    endNode.connectedNodes.add(startKey);
+
+    // Сохраняем ребро
+    edges.set(line.id, {
+      id: line.id,
+      line: line,
+      startNode: startKey,
+      endNode: endKey,
+      resistance: line.properties?.airResistance || 1,
+      length: Math.sqrt(
+        Math.pow(line.x2 - line.x1, 2) +
+        Math.pow(line.y2 - line.y1, 2)
+      )
+    });
+  });
+
+  // 2. Привязываем объекты к ближайшим узлам
+  images.forEach(img => {
+    const center = getObjectCenter(img);
+    const imgVolume = img.properties?.airVolume || 0;
+    const imgResistance = img.properties?.airResistance || 1;
+
+    // Ищем ближайший узел
+    let closestNode = null;
+    let minDistance = Infinity;
+
+    nodes.forEach((node, nodeId) => {
+      const distance = Math.sqrt(
+        Math.pow(node.x - center.x, 2) +
+        Math.pow(node.y - center.y, 2)
+      );
+
+      if (distance < minDistance && distance < 50) {
+        minDistance = distance;
+        closestNode = node;
+      }
+    });
+
+    // Если нашли ближайший узел
+    if (closestNode) {
+      closestNode.objects.push({
+        object: img,
+        name: img.properties?.name || 'Объект',
+        airVolume: imgVolume,
+        airResistance: imgResistance
+      });
+
+      // Если объект источник воздуха
+      if (imgVolume > 0) {
+        closestNode.isSource = true;
+        closestNode.airVolume += imgVolume;
+      }
+    }
+  });
+
+  return {nodes, edges};
+}
+
+// Функция идентификации всех источников воздуха
+function identifyAllSources(graph) {
+  const sources = [];
+
+  graph.nodes.forEach((node, nodeId) => {
+    // Узел является источником если:
+    // 1. Есть объект с воздухом > 0
+    // 2. ИЛИ нет входящих линий (начало сети) и у него есть исходящие линии
+    const hasSourceObject = node.objects.some(obj => obj.airVolume > 0);
+    const hasOutgoingLines = node.lines.length > 0;
+
+    if (hasSourceObject) {
+      node.isSource = true;
+      sources.push({
+        nodeId: nodeId,
+        node: node,
+        airVolume: node.airVolume,
+        type: 'object'
+      });
+    } else if (hasOutgoingLines) {
+      // Проверяем, является ли узел началом сети (нет линий, которые заканчиваются в этом узле)
+      let isStartOfNetwork = true;
+
+      graph.nodes.forEach((otherNode, otherId) => {
+        if (otherId !== nodeId) {
+          const lineConnectsToNode = otherNode.lines.some(line => {
+            const lineEndKey = `${roundTo5(line.x2)}_${roundTo5(line.y2)}`;
+            return lineEndKey === nodeId;
+          });
+
+          if (lineConnectsToNode) {
+            isStartOfNetwork = false;
+          }
+        }
+      });
+
+      if (isStartOfNetwork) {
+        node.isSource = true;
+        sources.push({
+          nodeId: nodeId,
+          node: node,
+          airVolume: 0, // Нет объекта, но начало сети
+          type: 'network_start'
+        });
+      }
+    }
+  });
+
+  return sources;
+}
+
+// Функция расчета распределения потоков
+function calculateFlowDistribution(graph, sources) {
+  const flows = new Map(); // Map: lineId -> flowValue
+  const processedNodes = new Set();
+  const nodeQueue = [];
+
+  // 1. Инициализация: все источники в очередь
+  sources.forEach(source => {
+    if (!processedNodes.has(source.nodeId)) {
+      nodeQueue.push(source.nodeId);
+      processedNodes.add(source.nodeId);
+    }
+  });
+
+  // 2. Обработка узлов в порядке очереди (BFS)
+  while (nodeQueue.length > 0) {
+    const currentNodeId = nodeQueue.shift();
+    const currentNode = graph.nodes.get(currentNodeId);
+
+    if (!currentNode) continue;
+
+    // 2.1. Собираем все входящие потоки в текущий узел
+    let totalIncomingFlow = 0;
+    let incomingLines = [];
+
+    // Находим все линии, которые входят в этот узел (заканчиваются в нем)
+    graph.edges.forEach((edge, edgeId) => {
+      if (edge.endNode === currentNodeId) {
+        const flow = flows.get(edgeId) || 0;
+        totalIncomingFlow += flow;
+        incomingLines.push({edge, flow});
+      }
+    });
+
+    // 2.2. Добавляем объем от источника (если есть)
+    const sourceVolume = currentNode.airVolume || 0;
+    let totalAvailableFlow = totalIncomingFlow + sourceVolume;
+
+    // 2.3. Если нет исходящих линий - пропускаем (тупик)
+    if (currentNode.lines.length === 0) {
+      continue;
+    }
+
+    // 2.4. Находим все исходящие линии (начинаются в этом узле)
+    const outgoingEdges = [];
+    graph.edges.forEach((edge, edgeId) => {
+      if (edge.startNode === currentNodeId) {
+        outgoingEdges.push({edgeId, edge});
+      }
+    });
+
+    // 2.5. Распределяем поток по исходящим линиям
+    if (outgoingEdges.length === 0) {
+      // Нет исходящих линий - поток накапливается в узле
+      continue;
+    } else if (outgoingEdges.length === 1) {
+      // Одна исходящая линия - весь поток ей
+      const {edgeId, edge} = outgoingEdges[0];
+      flows.set(edgeId, totalAvailableFlow);
+
+      // Добавляем конечный узел в очередь
+      if (!processedNodes.has(edge.endNode)) {
+        nodeQueue.push(edge.endNode);
+        processedNodes.add(edge.endNode);
+      }
+    } else {
+      // Несколько исходящих линий - распределяем по проводимости
+      let totalConductivity = 0;
+      outgoingEdges.forEach(({edge}) => {
+        if (edge.resistance > 0) {
+          totalConductivity += 1 / edge.resistance;
+        }
+      });
+
+      if (totalConductivity > 0) {
+        outgoingEdges.forEach(({edgeId, edge}) => {
+          const conductivity = edge.resistance > 0 ? 1 / edge.resistance : 0;
+          const flow = totalAvailableFlow * (conductivity / totalConductivity);
+          flows.set(edgeId, flow);
+
+          // Добавляем конечный узел в очередь
+          if (!processedNodes.has(edge.endNode)) {
+            nodeQueue.push(edge.endNode);
+            processedNodes.add(edge.endNode);
+          }
+        });
+      }
+    }
+  }
+
+  // 3. Проверяем, что все линии получили значения
+  let hasUnprocessedLines = false;
+  graph.edges.forEach((edge, edgeId) => {
+    if (!flows.has(edgeId)) {
+      console.warn(`Линия ${edgeId} не обработана!`);
+      hasUnprocessedLines = true;
+      flows.set(edgeId, 0); // Устанавливаем нулевой поток
+    }
+  });
+
+  return {
+    success: !hasUnprocessedLines,
+    flows: flows,
+    error: hasUnprocessedLines ? 'Не все линии обработаны' : null
+  };
+}
+
+// Функция применения результатов расчета к линиям
+function applyFlowResultsToLines(lines, flows) {
+  let updatedCount = 0;
+
+  lines.forEach(line => {
+    const flow = flows.get(line.id);
+
+    if (flow !== undefined && flow !== null) {
+      if (!line.properties) {
+        line.properties = {};
+      }
+
+      const oldFlow = line.properties.airVolume || 0;
+      const newFlow = roundTo5(flow);
+
+      if (Math.abs(oldFlow - newFlow) > 0.001) {
+        line.properties.airVolume = newFlow;
+        line.set('properties', line.properties);
+        updatedCount++;
+      }
+    }
+  });
+
+  console.log(`Обновлено ${updatedCount} линий из ${lines.length}`);
+  return updatedCount;
+}
+
+// Функция коррекции баланса потоков
+function correctFlowBalance(graph, lines) {
+  const MAX_ITERATIONS = 20;
+  const TOLERANCE = 0.001;
+
+  for (let iteration = 0; iteration < MAX_ITERATIONS; iteration++) {
+    let maxCorrection = 0;
+
+    graph.nodes.forEach((node, nodeId) => {
+      // Пропускаем источники
+      if (node.isSource) return;
+
+      // Собираем все входящие потоки
+      let totalIncoming = 0;
+      let incomingCount = 0;
+
+      graph.edges.forEach((edge, edgeId) => {
+        if (edge.endNode === nodeId) {
+          const line = lines.find(l => l.id === edgeId);
+          if (line && line.properties?.airVolume) {
+            totalIncoming += line.properties.airVolume;
+            incomingCount++;
+          }
+        }
+      });
+
+      // Собираем все исходящие потоки
+      let totalOutgoing = 0;
+      let outgoingCount = 0;
+
+      graph.edges.forEach((edge, edgeId) => {
+        if (edge.startNode === nodeId) {
+          const line = lines.find(l => l.id === edgeId);
+          if (line && line.properties?.airVolume) {
+            totalOutgoing += line.properties.airVolume;
+            outgoingCount++;
+          }
+        }
+      });
+
+      // Проверяем баланс
+      const imbalance = totalIncoming - totalOutgoing;
+
+      if (Math.abs(imbalance) > TOLERANCE && outgoingCount > 0) {
+        // Корректируем исходящие потоки пропорционально
+        const correctionFactor = totalIncoming / (totalOutgoing || 1);
+
+        graph.edges.forEach((edge, edgeId) => {
+          if (edge.startNode === nodeId) {
+            const line = lines.find(l => l.id === edgeId);
+            if (line && line.properties?.airVolume !== undefined) {
+              const oldFlow = line.properties.airVolume;
+              const newFlow = roundTo5(oldFlow * correctionFactor);
+              const correction = Math.abs(newFlow - oldFlow);
+
+              if (correction > maxCorrection) {
+                maxCorrection = correction;
+              }
+
+              line.properties.airVolume = newFlow;
+              line.set('properties', line.properties);
+            }
+          }
+        });
+      }
+    });
+
+    console.log(`Итерация ${iteration + 1}: максимальная коррекция = ${maxCorrection.toFixed(5)}`);
+
+    // Если коррекции незначительны - выходим
+    if (maxCorrection < TOLERANCE) {
+      console.log(`Баланс достигнут за ${iteration + 1} итераций`);
+      break;
+    }
+  }
+}
+
+// Функция расчета общего потока
+function calculateTotalFlow(lines) {
+  let total = 0;
+
+  lines.forEach(line => {
+    if (line.properties?.airVolume) {
+      total += line.properties.airVolume;
+    }
+  });
+
+  return roundTo5(total);
+}
+
+// ==================== ФУНКЦИЯ ПРОВЕРКИ БАЛАНСА ====================
+function checkFlowBalance() {
+  console.log('\n=== ПРОВЕРКА БАЛАНСА ПОТОКОВ ===');
+
+  const lines = getCachedLines();
+  const nodes = new Map();
+
+  // Собираем потоки по узлам
+  lines.forEach(line => {
+    const startKey = `${roundTo5(line.x1)}_${roundTo5(line.y1)}`;
+    const endKey = `${roundTo5(line.x2)}_${roundTo5(line.y2)}`;
+
+    if (!nodes.has(startKey)) {
+      nodes.set(startKey, {incoming: 0, outgoing: 0});
+    }
+
+    if (!nodes.has(endKey)) {
+      nodes.set(endKey, {incoming: 0, outgoing: 0});
+    }
+
+    const flow = line.properties?.airVolume || 0;
+    nodes.get(startKey).outgoing += flow;
+    nodes.get(endKey).incoming += flow;
+  });
+
+  // Проверяем баланс
+  let unbalancedCount = 0;
+  nodes.forEach((node, nodeId) => {
+    const imbalance = Math.abs(node.incoming - node.outgoing);
+
+    if (imbalance > 0.001) {
+      console.log(`🔴 Узел ${nodeId}: разбаланс ${imbalance.toFixed(4)}`);
+      console.log(`   Входящие: ${node.incoming.toFixed(4)}, Исходящие: ${node.outgoing.toFixed(4)}`);
+      unbalancedCount++;
+    }
+  });
+
+  if (unbalancedCount === 0) {
+    console.log('✅ Все узлы сбалансированы!');
+    showNotification('Баланс потоков соблюден!', 'success');
+  } else {
+    console.log(`⚠️ Найдено ${unbalancedCount} несбалансированных узлов`);
+    showNotification(`Обнаружено ${unbalancedCount} несбалансированных узлов`, 'warning');
+  }
+
+  return unbalancedCount;
+}
+
+// ==================== ТЕСТОВАЯ ФУНКЦИЯ ДЛЯ ПРОВЕРКИ ====================
+function createTestScenarioComplex() {
+  clearCanvas();
+
+  console.log('Создание сложного тестового сценария...');
+
+  // Создаем несколько источников в разных местах
+  const sources = [
+    {x: 100, y: 100, volume: 10, name: 'Вентилятор 1'},
+    {x: 400, y: 300, volume: 5, name: 'Вентилятор 2'},
+    {x: 700, y: 100, volume: 8, name: 'Вентилятор 3'}
+  ];
+
+  // Создаем линии в разном порядке и направлении
+  const lines = [
+    // Первая сеть (от первого вентилятора)
+    {x1: 100, y1: 100, x2: 200, y2: 100, name: 'Линия 1-2'},
+    {x1: 200, y1: 100, x2: 200, y2: 200, name: 'Линия 2-3'},
+    {x1: 200, y1: 100, x2: 300, y2: 100, name: 'Линия 2-4'},
+    {x1: 200, y1: 200, x2: 300, y2: 100, name: 'Линия 3-4'},
+
+    // Вторая сеть (от второго вентилятора)
+    {x1: 400, y1: 300, x2: 400, y2: 200, name: 'Линия 5-6'},
+    {x1: 400, y1: 200, x2: 300, y2: 100, name: 'Линия 6-4'},
+    {x1: 400, y1: 300, x2: 500, y2: 300, name: 'Линия 5-7'},
+
+    // Третья сеть (от третьего вентилятора)
+    {x1: 700, y1: 100, x2: 600, y2: 100, name: 'Линия 8-9'},
+    {x1: 600, y1: 100, x2: 500, y2: 300, name: 'Линия 9-7'},
+    {x1: 500, y1: 300, x2: 300, y2: 100, name: 'Линия 7-4'},
+
+    // Соединительные линии
+    {x1: 300, y1: 100, x2: 400, y2: 100, name: 'Линия 4-10'},
+    {x1: 400, y1: 100, x2: 500, y2: 100, name: 'Линия 10-11'},
+    {x1: 500, y1: 100, x2: 600, y2: 100, name: 'Линия 11-9'}
+  ];
+
+  // Создаем вентиляторы
+  sources.forEach((source, index) => {
+    fabric.Image.fromURL('./img/fan.png', function (img) {
+      img.set({
+        left: source.x,
+        top: source.y,
+        scaleX: 0.5,
+        scaleY: 0.5,
+        properties: {
+          name: source.name,
+          type: 'fan',
+          airVolume: source.volume,
+          airResistance: 1
+        }
+      });
+      canvas.add(img);
+
+      // Создаем связанные линии
+      if (index === 0) {
+        const line = lines[0];
+        const lineObj = new fabric.Line([source.x, source.y, line.x2, line.y2], {
+          stroke: '#4A00E0',
+          strokeWidth: 5,
+          properties: {
+            name: line.name,
+            airResistance: 1 + Math.random() * 2,
+            airVolume: 0
+          },
+          id: 'line_' + Date.now() + '_' + index
+        });
+        canvas.add(lineObj);
+
+        // Устанавливаем связь
+        lineObj.lineStartsFromObject = true;
+        lineObj.startObject = img;
+      }
+    });
+  });
+
+  // Создаем остальные линии (в случайном порядке)
+  setTimeout(() => {
+    const shuffledLines = [...lines.slice(1)];
+    shuffledLines.sort(() => Math.random() - 0.5); // Перемешиваем
+
+    shuffledLines.forEach((line, index) => {
+      setTimeout(() => {
+        const lineObj = new fabric.Line([line.x1, line.y1, line.x2, line.y2], {
+          stroke: '#4A00E0',
+          strokeWidth: 5,
+          properties: {
+            name: line.name,
+            airResistance: 1 + Math.random() * 2,
+            airVolume: 0
+          },
+          id: 'line_' + Date.now() + '_' + (index + 3)
+        });
+        canvas.add(lineObj);
+
+        if (index === shuffledLines.length - 1) {
+          // После создания всех линий обновляем кэш
+          setTimeout(() => {
+            invalidateCache();
+            updateConnectionGraph();
+            showNotification('Сложный тестовый сценарий создан. Нажмите "Расчет воздуха"', 'success');
+          }, 500);
+        }
+      }, index * 50);
+    });
+  }, 1000);
+}
+
+// Функция для принудительного разбиения всех линий перед расчетом
+function splitAllLinesBeforeCalculation() {
+  console.log('Принудительное разбиение всех линий перед расчетом...');
+  splitAllLines();
+
+  // Также разбиваем по центрам объектов
+  splitAllLinesAtObjectCenters();
+
+  // Обновляем граф
+  updateConnectionGraph();
+
+  showNotification('Все линии разбиты перед расчетом', 'info');
+  return true;
 }
 
 // ==================== СОБЫТИЯ КАНВАСА ====================
@@ -3071,6 +3457,105 @@ function analyzeIntersectionPoints() {
   return processedCount;
 }
 
+// Функция для создания тестового сценария
+function createTestScenario() {
+  clearCanvas();
+
+  // Создаем источник воздуха
+  const fan = {
+    id: 'test-fan',
+    name: 'Тестовый вентилятор',
+    path: './img/fan.png',
+    type: 'fan'
+  };
+
+  fabric.Image.fromURL(fan.path, function (img) {
+    img.set({
+      left: 100,
+      top: 100,
+      scaleX: 0.5,
+      scaleY: 0.5,
+      properties: {
+        name: fan.name,
+        type: fan.type,
+        airVolume: 10,
+        airResistance: 1
+      }
+    });
+    canvas.add(img);
+
+    // Создаем линии в разном порядке
+    const lines = [];
+
+    // Линия 1 (рисуем сначала эту)
+    const line1 = new fabric.Line([100, 100, 200, 100], {
+      stroke: '#4A00E0',
+      strokeWidth: 5,
+      properties: {
+        name: 'Линия 1',
+        airResistance: 1,
+        airVolume: 0
+      },
+      id: 'line_1'
+    });
+    canvas.add(line1);
+    lines.push(line1);
+
+    // Линия 2 (от середины первой линии)
+    const line2 = new fabric.Line([200, 100, 200, 200], {
+      stroke: '#4A00E0',
+      strokeWidth: 5,
+      properties: {
+        name: 'Линия 2',
+        airResistance: 2,
+        airVolume: 0
+      },
+      id: 'line_2'
+    });
+    canvas.add(line2);
+    lines.push(line2);
+
+    // Линия 3 (параллельная второй)
+    const line3 = new fabric.Line([200, 100, 300, 100], {
+      stroke: '#4A00E0',
+      strokeWidth: 5,
+      properties: {
+        name: 'Линия 3',
+        airResistance: 1,
+        airVolume: 0
+      },
+      id: 'line_3'
+    });
+    canvas.add(line3);
+    lines.push(line3);
+
+    // Линия 4 (соединяет концы 2 и 3)
+    const line4 = new fabric.Line([200, 200, 300, 100], {
+      stroke: '#4A00E0',
+      strokeWidth: 5,
+      properties: {
+        name: 'Линия 4',
+        airResistance: 3,
+        airVolume: 0
+      },
+      id: 'line_4'
+    });
+    canvas.add(line4);
+    lines.push(line4);
+
+    // Устанавливаем связь с вентилятором
+    line1.lineStartsFromObject = true;
+    line1.startObject = img;
+
+    // Обновляем кэш
+    setTimeout(() => {
+      invalidateCache();
+      updateConnectionGraph();
+      showNotification('Тестовый сценарий создан. Нажмите "Расчет воздуха"', 'success');
+    }, 100);
+  });
+}
+
 // ==================== ПАНЕЛЬ СВОЙСТВ ====================
 function updatePropertiesPanel() {
   const activeObj = canvas.getActiveObject();
@@ -3116,7 +3601,7 @@ function updatePropertiesPanel() {
 
 function updateStatus() {
   const objects = getCachedObjects();
-  const count = objects.all.filter(obj => obj.id !== 'grid-group' && obj.id !== 'grid-line').length;
+  const count = objects.all.filter(obj => obj.id !== 'grid-group' && obj.id !== 'grid-line' && !obj.isPreview).length;
   let statusText = `<strong>Объектов:</strong> ${count}`;
 
   if (count > APP_CONFIG.MAX_OBJECTS * 0.7) {
@@ -3682,6 +4167,10 @@ function setupKeyboardShortcuts() {
         event.preventDefault();
         if (event.altKey) toggleNodeLock();
         break;
+      case 'b':
+        event.preventDefault();
+        if (event.altKey) checkFlowBalance();
+        break;
     }
   });
   document.addEventListener('click', hideContextMenu);
@@ -4097,5 +4586,12 @@ window.calculateAirVolumeAtPoint = calculateAirVolumeAtPoint;
 window.splitAllLines = splitAllLines;
 window.generateLineId = generateLineId;
 window.splitLineAtPoint = splitLineAtPoint;
+window.checkFlowBalance = checkFlowBalance;
+window.createTestScenarioComplex = createTestScenarioComplex;
+window.splitAllLinesBeforeCalculation = splitAllLinesBeforeCalculation;
 
-console.log('Редактор технических чертежей загружен с правильным расчетом воздушных потоков!');
+console.log('Редактор технических чертежей загружен с независимым расчетом воздушных потоков!');
+
+
+// появляется ошибка pereschot-09-02-2026-2-optimiz-2.js:507 Uncaught TypeError: Assignment to constant variable.
+//   at updatePerformanceMetrics (pereschot-09-02-2026-2-optimiz-2.js:507:16)
