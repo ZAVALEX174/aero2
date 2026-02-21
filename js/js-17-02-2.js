@@ -1788,6 +1788,25 @@ function handleCanvasMouseDown(options) {
     if (activeObject) showContextMenu(pointer.x, pointer.y);
     options.e.preventDefault();
   }
+
+  // ===== НОВЫЙ КОД: определение режима перетаскивания линии =====
+  if (!isDrawingLine && options.target && options.target.type === 'line' && options.e.button === 0) {
+    // Левый клик по линии – запоминаем, за какую часть схватились
+    const pointer = canvas.getPointer(options.e);
+    const line = options.target;
+    const distToStart = Math.hypot(pointer.x - line.x1, pointer.y - line.y1);
+    const distToEnd = Math.hypot(pointer.x - line.x2, pointer.y - line.y2);
+    const threshold = 15; // порог для захвата конца
+    if (distToStart < threshold || distToEnd < threshold) {
+      lineDragState.pending = true;
+      lineDragState.pendingEnd = distToStart < distToEnd ? 'start' : 'end';
+    } else {
+      lineDragState.pending = true;
+      lineDragState.pendingEnd = 'whole';
+    }
+    lineDragState.pendingLine = line;
+  }
+// ===== КОНЕЦ НОВОГО КОДА =====
 }
 
 // ИСПРАВЛЕННАЯ ФУНКЦИЯ ДЛЯ НАЧАЛА РИСОВАНИЯ ЛИНИИ
@@ -2770,8 +2789,11 @@ function createIntersectionPoint(x, y, index, intersectionData, customColor = '#
     id: 'intersection-point-label'
   });
 
+  // Заменяем обработчик для поддержки перетаскивания с Alt
   circle.on('mousedown', function (e) {
-    if (e.e.button === 0) {
+    if (e.e.altKey) {
+      // При Alt ничего не делаем, fabric сам обработает перетаскивание
+    } else {
       e.e.preventDefault();
       e.e.stopPropagation();
 
@@ -2789,6 +2811,14 @@ function createIntersectionPoint(x, y, index, intersectionData, customColor = '#
       showIntersectionPointInfoModal(pointInfo);
       return false;
     }
+  });
+
+  circle.set({
+    selectable: true,
+    hasControls: false,
+    hasBorders: false,
+    lockMovementX: false,
+    lockMovementY: false
   });
 
   canvas.add(circle);
@@ -4784,6 +4814,284 @@ function quickExportToPDF() {
     showNotification('Ошибка при создании PDF: ' + error.message, 'error');
   }
 }
+
+// ==================== НОВЫЕ ПОВЕДЕНИЯ: ПЕРЕТАСКИВАНИЕ ЛИНИЙ И УЗЛОВ ====================
+
+// Состояние перетаскивания линии
+let lineDragState = {
+  active: false,
+  line: null,
+  startX1: 0, startY1: 0,
+  startX2: 0, startY2: 0,
+  startLocked: false,
+  endLocked: false,
+  draggedEnd: null, // 'start', 'end', 'whole'
+  // Для определения режима при mouse:down
+  pending: false,
+  pendingEnd: null,
+  pendingLine: null
+};
+
+// Проверка, является ли точка узлом (соединение нескольких линий)
+function isPointALockedNode(x, y) {
+  const key = `${roundTo5(x)}_${roundTo5(y)}`;
+  const node = connectionNodes.get(key);
+  return node && node.locked && node.lines.length > 1;
+}
+
+// Поиск ближайшего узла для примагничивания
+function snapToNode(x, y, threshold = APP_CONFIG.SNAP_RADIUS) {
+  let closest = null;
+  let minDist = threshold;
+  for (const node of connectionNodes.values()) {
+    const dist = Math.hypot(x - node.x, y - node.y);
+    if (dist < minDist) {
+      minDist = dist;
+      closest = node;
+    }
+  }
+  return closest ? {x: closest.x, y: closest.y} : null;
+}
+
+// Обработчик начала перемещения (вызывается из object:moving)
+function onLineMovingStart(e) {
+  const line = e.target;
+  if (line.type !== 'line' || line.id === 'preview-line') return;
+
+  // Если есть ожидающая информация от mouse:down и она совпадает с этой линией
+  if (lineDragState.pending && lineDragState.pendingLine === line) {
+    lineDragState.draggedEnd = lineDragState.pendingEnd;
+    lineDragState.pending = false;
+    lineDragState.pendingLine = null;
+    lineDragState.pendingEnd = null;
+  } else {
+    // На всякий случай fallback – считаем, что перемещается вся линия
+    lineDragState.draggedEnd = 'whole';
+  }
+
+  lineDragState.active = true;
+  lineDragState.line = line;
+  lineDragState.startX1 = line.x1;
+  lineDragState.startY1 = line.y1;
+  lineDragState.startX2 = line.x2;
+  lineDragState.startY2 = line.y2;
+  lineDragState.startLocked = isPointALockedNode(line.x1, line.y1);
+  lineDragState.endLocked = isPointALockedNode(line.x2, line.y2);
+}
+
+// Обработчик процесса перемещения
+function onLineMoving(e) {
+  if (!lineDragState.active || lineDragState.line !== e.target) return;
+
+  const line = e.target;
+  const newX1 = line.x1, newY1 = line.y1;
+  const newX2 = line.x2, newY2 = line.y2;
+  const oldX1 = lineDragState.startX1, oldY1 = lineDragState.startY1;
+  const oldX2 = lineDragState.startX2, oldY2 = lineDragState.startY2;
+
+  let corrected = false;
+  let newX1_c = newX1, newY1_c = newY1, newX2_c = newX2, newY2_c = newY2;
+
+  // Случай 1: оба конца закреплены – запрещаем любое перемещение
+  if (lineDragState.startLocked && lineDragState.endLocked) {
+    newX1_c = oldX1;
+    newY1_c = oldY1;
+    newX2_c = oldX2;
+    newY2_c = oldY2;
+    corrected = true;
+  } else {
+    // Случай 2: закреплён старт
+    if (lineDragState.startLocked) {
+      if (lineDragState.draggedEnd === 'start') {
+        // Пытаются тянуть за закреплённый старт – запрещаем
+        newX1_c = oldX1;
+        newY1_c = oldY1;
+        corrected = true;
+      } else if (lineDragState.draggedEnd === 'whole') {
+        // Перемещают целиком – разрешаем двигаться только концу
+        newX1_c = oldX1;
+        newY1_c = oldY1;
+        corrected = true;
+      }
+      // Если тянут за конец – старт остаётся на месте автоматически
+    }
+
+    // Случай 3: закреплён конец
+    if (lineDragState.endLocked) {
+      if (lineDragState.draggedEnd === 'end') {
+        newX2_c = oldX2;
+        newY2_c = oldY2;
+        corrected = true;
+      } else if (lineDragState.draggedEnd === 'whole') {
+        newX2_c = oldX2;
+        newY2_c = oldY2;
+        corrected = true;
+      }
+    }
+
+    // Случай 4: ни один конец не закреплён – примагничивание для свободного конца
+    if (!lineDragState.startLocked && !lineDragState.endLocked) {
+      if (lineDragState.draggedEnd === 'start') {
+        const snap = snapToNode(newX1, newY1);
+        if (snap) {
+          newX1_c = snap.x;
+          newY1_c = snap.y;
+          corrected = true;
+        }
+      } else if (lineDragState.draggedEnd === 'end') {
+        const snap = snapToNode(newX2, newY2);
+        if (snap) {
+          newX2_c = snap.x;
+          newY2_c = snap.y;
+          corrected = true;
+        }
+      }
+      // При перемещении целиком не примагничиваем
+    }
+  }
+
+  if (corrected) {
+    line.set({x1: newX1_c, y1: newY1_c, x2: newX2_c, y2: newY2_c});
+    line.setCoords();
+    // Обновляем начальные координаты для следующего шага
+    lineDragState.startX1 = newX1_c;
+    lineDragState.startY1 = newY1_c;
+    lineDragState.startX2 = newX2_c;
+    lineDragState.startY2 = newY2_c;
+    // Принудительно перерисовываем
+    canvas.renderAll();
+  }
+
+  // Обновляем текст объёма, если есть
+  if (line.airVolumeText) {
+    createOrUpdateAirVolumeText(line);
+  }
+}
+
+// Обработчик окончания перемещения
+function onLineModified(e) {
+  if (!lineDragState.active) return;
+  lineDragState.active = false;
+  lineDragState.line = null;
+  invalidateCache();
+  updateConnectionGraph();
+  if (e.target && e.target.type === 'line') {
+    createOrUpdateAirVolumeText(e.target);
+  }
+  scheduleRender();
+}
+
+// ==================== ПЕРЕТАСКИВАНИЕ УЗЛОВ (ТОЧЕК ПЕРЕСЕЧЕНИЯ) ====================
+
+function updateLinesAttachedToNode(oldX, oldY, newX, newY) {
+  const key = `${roundTo5(oldX)}_${roundTo5(oldY)}`;
+  const node = connectionNodes.get(key);
+  if (!node) return;
+
+  node.lines.forEach(item => {
+    const line = item.line;
+    if (item.isStart) {
+      line.set({x1: newX, y1: newY});
+    } else {
+      line.set({x2: newX, y2: newY});
+    }
+    line.setCoords();
+    if (line.airVolumeText) {
+      createOrUpdateAirVolumeText(line);
+    }
+  });
+
+  // Обновляем запись в connectionNodes
+  connectionNodes.delete(key);
+  const newKey = `${roundTo5(newX)}_${roundTo5(newY)}`;
+  node.x = newX;
+  node.y = newY;
+  connectionNodes.set(newKey, node);
+}
+
+function onIntersectionPointMoving(e) {
+  const point = e.target;
+  if (point.id !== 'intersection-point') return;
+
+  const r = point.radius || 6;
+  const oldX = point.left + r;
+  const oldY = point.top + r;
+  const newX = point.left + r;
+  const newY = point.top + r;
+
+  updateLinesAttachedToNode(oldX, oldY, newX, newY);
+
+  // Перемещаем метку
+  const label = intersectionVisuals.find(v => v.circle === point)?.text;
+  if (label) {
+    label.set({left: newX, top: newY});
+    label.setCoords();
+  }
+
+  invalidateCache();
+  canvas.renderAll();
+}
+
+function onIntersectionPointModified(e) {
+  const point = e.target;
+  if (point.id !== 'intersection-point') return;
+
+  setTimeout(() => {
+    buildConnectionGraph();
+    bringIntersectionPointsToFront();
+    scheduleRender();
+  }, 10);
+}
+
+// Добавляем обработчики в canvas
+function extendSetupCanvasEvents() {
+  if (!canvas) return;
+
+  canvas.on('object:moving', function (e) {
+    const obj = e.target;
+    if (obj.type === 'line') {
+      if (!lineDragState.active) {
+        onLineMovingStart(e);
+      }
+      onLineMoving(e);
+    } else if (obj.id === 'intersection-point') {
+      onIntersectionPointMoving(e);
+    }
+  });
+
+  canvas.on('object:modified', function (e) {
+    const obj = e.target;
+    if (obj.type === 'line') {
+      onLineModified(e);
+    } else if (obj.id === 'intersection-point') {
+      onIntersectionPointModified(e);
+    }
+  });
+
+  // Сбрасываем pending-информацию, если выделение изменилось без движения
+  canvas.on('selection:created', function () {
+    lineDragState.pending = false;
+    lineDragState.pendingLine = null;
+    lineDragState.pendingEnd = null;
+  });
+
+  canvas.on('selection:cleared', function () {
+    lineDragState.pending = false;
+    lineDragState.pendingLine = null;
+    lineDragState.pendingEnd = null;
+  });
+}
+
+// Вызываем после инициализации canvas
+if (canvas) {
+  extendSetupCanvasEvents();
+} else {
+  document.addEventListener('DOMContentLoaded', function () {
+    if (canvas) extendSetupCanvasEvents();
+  });
+}
+
+// ==================== КОНЕЦ НОВЫХ ПОВЕДЕНИЙ ====================
 
 // ==================== ЭКСПОРТ ГЛОБАЛЬНЫХ ФУНКЦИЙ ====================
 window.canvas = canvas;

@@ -1,7 +1,7 @@
 // ПОЛНЫЙ КОД РЕДАКТОРА С ИСПРАВЛЕННЫМ АЛГОРИТМОМ РАСЧЁТА ВОЗДУХА
-// Версия 3.2 – исправлена ошибка findLinesInArea, округлены размеры в модалке объектов.
+// Версия 3.3 – удалены неработающие функции: сложный тест и перетаскивание линий/узлов.
 
-console.log("РЕДАКТОР ТЕХНИЧЕСКИХ ЧЕРТЕЖЕЙ (ФИНАЛЬНАЯ ВЕРСИЯ 3.2)");
+console.log("РЕДАКТОР ТЕХНИЧЕСКИХ ЧЕРТЕЖЕЙ (ФИНАЛЬНАЯ ВЕРСИЯ 3.3)");
 
 // ==================== КОНСТАНТЫ И ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ ====================
 const APP_CONFIG = {
@@ -350,12 +350,6 @@ document.addEventListener('DOMContentLoaded', function () {
   document.getElementById('analyzePointsBtn')?.addEventListener('click', function () {
     analyzeIntersectionPoints();
   });
-
-  const testBtn = document.createElement('button');
-  testBtn.innerHTML = '<span>🧪</span> Сложный тест';
-  testBtn.className = 'toolbar-btn';
-  testBtn.onclick = createTestScenarioComplex;
-  document.querySelector('.toolbar')?.appendChild(testBtn);
 
   const balanceBtn = document.createElement('button');
   balanceBtn.innerHTML = '<span>⚖️</span> Проверить баланс';
@@ -1293,91 +1287,6 @@ function checkFlowBalance() {
   return result.unbalancedCount;
 }
 
-// ==================== ТЕСТОВАЯ ФУНКЦИЯ ====================
-function createTestScenarioComplex() {
-  clearCanvas();
-  console.log('Создание сложного тестового сценария...');
-  const sources = [
-    {x: 100, y: 100, volume: 10, name: 'Вентилятор 1'},
-    {x: 400, y: 300, volume: 5, name: 'Вентилятор 2'},
-    {x: 700, y: 100, volume: 8, name: 'Вентилятор 3'}
-  ];
-  const lines = [
-    {x1: 100, y1: 100, x2: 200, y2: 100, name: 'Линия 1-2'},
-    {x1: 200, y1: 100, x2: 200, y2: 200, name: 'Линия 2-3'},
-    {x1: 200, y1: 100, x2: 300, y2: 100, name: 'Линия 2-4'},
-    {x1: 200, y1: 200, x2: 300, y2: 100, name: 'Линия 3-4'},
-    {x1: 400, y1: 300, x2: 400, y2: 200, name: 'Линия 5-6'},
-    {x1: 400, y1: 200, x2: 300, y2: 100, name: 'Линия 6-4'},
-    {x1: 400, y1: 300, x2: 500, y2: 300, name: 'Линия 5-7'},
-    {x1: 700, y1: 100, x2: 600, y2: 100, name: 'Линия 8-9'},
-    {x1: 600, y1: 100, x2: 500, y2: 300, name: 'Линия 9-7'},
-    {x1: 500, y1: 300, x2: 300, y2: 100, name: 'Линия 7-4'},
-    {x1: 300, y1: 100, x2: 400, y2: 100, name: 'Линия 4-10'},
-    {x1: 400, y1: 100, x2: 500, y2: 100, name: 'Линия 10-11'},
-    {x1: 500, y1: 100, x2: 600, y2: 100, name: 'Линия 11-9'}
-  ];
-  sources.forEach((source, index) => {
-    fabric.Image.fromURL('./img/fan.png', function (img) {
-      img.set({
-        left: source.x,
-        top: source.y,
-        scaleX: 0.5,
-        scaleY: 0.5,
-        properties: {
-          name: source.name,
-          type: 'fan',
-          airVolume: source.volume,
-          airResistance: 1
-        }
-      });
-      canvas.add(img);
-      if (index === 0) {
-        const line = lines[0];
-        const lineObj = new fabric.Line([source.x, source.y, line.x2, line.y2], {
-          stroke: '#4A00E0',
-          strokeWidth: 5,
-          properties: {
-            name: line.name,
-            airResistance: 1 + Math.random() * 2,
-            airVolume: 0
-          },
-          id: 'line_' + Date.now() + '_' + index
-        });
-        canvas.add(lineObj);
-        lineObj.lineStartsFromObject = true;
-        lineObj.startObject = img;
-      }
-    });
-  });
-  setTimeout(() => {
-    const shuffledLines = [...lines.slice(1)];
-    shuffledLines.sort(() => Math.random() - 0.5);
-    shuffledLines.forEach((line, index) => {
-      setTimeout(() => {
-        const lineObj = new fabric.Line([line.x1, line.y1, line.x2, line.y2], {
-          stroke: '#4A00E0',
-          strokeWidth: 5,
-          properties: {
-            name: line.name,
-            airResistance: 1 + Math.random() * 2,
-            airVolume: 0
-          },
-          id: 'line_' + Date.now() + '_' + (index + 3)
-        });
-        canvas.add(lineObj);
-        if (index === shuffledLines.length - 1) {
-          setTimeout(() => {
-            invalidateCache();
-            updateConnectionGraph();
-            showNotification('Сложный тестовый сценарий создан. Нажмите "Расчет воздуха"', 'success');
-          }, 500);
-        }
-      }, index * 50);
-    });
-  }, 1000);
-}
-
 function splitAllLinesBeforeCalculation() {
   console.log('Принудительное разбиение всех линий перед расчетом...');
   splitAllLines();
@@ -1443,20 +1352,7 @@ function handleCanvasMouseDown(options) {
     if (activeObject) showContextMenu(pointer.x, pointer.y);
     options.e.preventDefault();
   }
-  if (!isDrawingLine && options.target && options.target.type === 'line' && options.e.button === 0) {
-    const line = options.target;
-    const distToStart = Math.hypot(pointer.x - line.x1, pointer.y - line.y1);
-    const distToEnd = Math.hypot(pointer.x - line.x2, pointer.y - line.y2);
-    const threshold = 15;
-    if (distToStart < threshold || distToEnd < threshold) {
-      lineDragState.pending = true;
-      lineDragState.pendingEnd = distToStart < distToEnd ? 'start' : 'end';
-    } else {
-      lineDragState.pending = true;
-      lineDragState.pendingEnd = 'whole';
-    }
-    lineDragState.pendingLine = line;
-  }
+  // Удалён блок, отвечавший за перетаскивание линии (lineDragState)
 }
 
 function handleLineDrawingStart(options, pointer) {
@@ -3699,205 +3595,6 @@ function quickExportToPDF() {
   }
 }
 
-// ==================== НОВЫЕ ПОВЕДЕНИЯ: ПЕРЕТАСКИВАНИЕ ЛИНИЙ И УЗЛОВ ====================
-let lineDragState = {
-  active: false,
-  line: null,
-  startX1: 0,
-  startY1: 0,
-  startX2: 0,
-  startY2: 0,
-  startLocked: false,
-  endLocked: false,
-  draggedEnd: null,
-  pending: false,
-  pendingEnd: null,
-  pendingLine: null
-};
-
-function isPointALockedNode(x, y) {
-  const node = connectionNodes.get(`${roundTo5(x)}_${roundTo5(y)}`);
-  return node && node.locked && node.lines.length > 1;
-}
-
-function snapToNode(x, y, threshold = APP_CONFIG.SNAP_RADIUS) {
-  let closest = null, minDist = threshold;
-  for (const node of connectionNodes.values()) {
-    const dist = Math.hypot(x - node.x, y - node.y);
-    if (dist < minDist) {
-      minDist = dist;
-      closest = node;
-    }
-  }
-  return closest ? {x: closest.x, y: closest.y} : null;
-}
-
-function onLineMovingStart(e) {
-  const line = e.target;
-  if (line.type !== 'line' || line.id === 'preview-line') return;
-  if (lineDragState.pending && lineDragState.pendingLine === line) {
-    lineDragState.draggedEnd = lineDragState.pendingEnd;
-    lineDragState.pending = false;
-    lineDragState.pendingLine = null;
-    lineDragState.pendingEnd = null;
-  } else {
-    lineDragState.draggedEnd = 'whole';
-  }
-  lineDragState.active = true;
-  lineDragState.line = line;
-  lineDragState.startX1 = line.x1;
-  lineDragState.startY1 = line.y1;
-  lineDragState.startX2 = line.x2;
-  lineDragState.startY2 = line.y2;
-  lineDragState.startLocked = isPointALockedNode(line.x1, line.y1);
-  lineDragState.endLocked = isPointALockedNode(line.x2, line.y2);
-}
-
-function onLineMoving(e) {
-  if (!lineDragState.active || lineDragState.line !== e.target) return;
-  const line = e.target;
-  const newX1 = line.x1, newY1 = line.y1, newX2 = line.x2, newY2 = line.y2;
-  const oldX1 = lineDragState.startX1, oldY1 = lineDragState.startY1,
-    oldX2 = lineDragState.startX2, oldY2 = lineDragState.startY2;
-  let corrected = false, newX1_c = newX1, newY1_c = newY1, newX2_c = newX2,
-    newY2_c = newY2;
-  if (lineDragState.startLocked && lineDragState.endLocked) {
-    newX1_c = oldX1;
-    newY1_c = oldY1;
-    newX2_c = oldX2;
-    newY2_c = oldY2;
-    corrected = true;
-  } else {
-    if (lineDragState.startLocked) {
-      if (lineDragState.draggedEnd === 'start' || lineDragState.draggedEnd === 'whole') {
-        newX1_c = oldX1;
-        newY1_c = oldY1;
-        corrected = true;
-      }
-    }
-    if (lineDragState.endLocked) {
-      if (lineDragState.draggedEnd === 'end' || lineDragState.draggedEnd === 'whole') {
-        newX2_c = oldX2;
-        newY2_c = oldY2;
-        corrected = true;
-      }
-    }
-    if (!lineDragState.startLocked && !lineDragState.endLocked) {
-      if (lineDragState.draggedEnd === 'start') {
-        const snap = snapToNode(newX1, newY1);
-        if (snap) {
-          newX1_c = snap.x;
-          newY1_c = snap.y;
-          corrected = true;
-        }
-      } else if (lineDragState.draggedEnd === 'end') {
-        const snap = snapToNode(newX2, newY2);
-        if (snap) {
-          newX2_c = snap.x;
-          newY2_c = snap.y;
-          corrected = true;
-        }
-      }
-    }
-  }
-  if (corrected) {
-    line.set({x1: newX1_c, y1: newY1_c, x2: newX2_c, y2: newY2_c});
-    line.setCoords();
-    lineDragState.startX1 = newX1_c;
-    lineDragState.startY1 = newY1_c;
-    lineDragState.startX2 = newX2_c;
-    lineDragState.startY2 = newY2_c;
-    canvas.renderAll();
-  }
-  if (line.airVolumeText) createOrUpdateAirVolumeText(line);
-}
-
-function onLineModified(e) {
-  if (!lineDragState.active) return;
-  lineDragState.active = false;
-  lineDragState.line = null;
-  invalidateCache();
-  updateConnectionGraph();
-  if (e.target && e.target.type === 'line') createOrUpdateAirVolumeText(e.target);
-  scheduleRender();
-}
-
-function updateLinesAttachedToNode(oldX, oldY, newX, newY) {
-  const key = `${roundTo5(oldX)}_${roundTo5(oldY)}`;
-  const node = connectionNodes.get(key);
-  if (!node) return;
-  node.lines.forEach(item => {
-    const line = item.line;
-    if (item.isStart) line.set({x1: newX, y1: newY}); else line.set({
-      x2: newX,
-      y2: newY
-    });
-    line.setCoords();
-    if (line.airVolumeText) createOrUpdateAirVolumeText(line);
-  });
-  connectionNodes.delete(key);
-  const newKey = `${roundTo5(newX)}_${roundTo5(newY)}`;
-  node.x = newX;
-  node.y = newY;
-  connectionNodes.set(newKey, node);
-}
-
-function onIntersectionPointMoving(e) {
-  const point = e.target;
-  if (point.id !== 'intersection-point') return;
-  const r = point.radius || 6;
-  const oldX = point.left + r, oldY = point.top + r, newX = point.left + r,
-    newY = point.top + r;
-  updateLinesAttachedToNode(oldX, oldY, newX, newY);
-  const label = intersectionVisuals.find(v => v.circle === point)?.text;
-  if (label) {
-    label.set({left: newX, top: newY});
-    label.setCoords();
-  }
-  invalidateCache();
-  canvas.renderAll();
-}
-
-function onIntersectionPointModified(e) {
-  const point = e.target;
-  if (point.id !== 'intersection-point') return;
-  setTimeout(() => {
-    buildConnectionGraph();
-    bringIntersectionPointsToFront();
-    scheduleRender();
-  }, 10);
-}
-
-function extendSetupCanvasEvents() {
-  if (!canvas) return;
-  canvas.on('object:moving', function (e) {
-    const obj = e.target;
-    if (obj.type === 'line') {
-      if (!lineDragState.active) onLineMovingStart(e);
-      onLineMoving(e);
-    } else if (obj.id === 'intersection-point') onIntersectionPointMoving(e);
-  });
-  canvas.on('object:modified', function (e) {
-    const obj = e.target;
-    if (obj.type === 'line') onLineModified(e);
-    else if (obj.id === 'intersection-point') onIntersectionPointModified(e);
-  });
-  canvas.on('selection:created', function () {
-    lineDragState.pending = false;
-    lineDragState.pendingLine = null;
-    lineDragState.pendingEnd = null;
-  });
-  canvas.on('selection:cleared', function () {
-    lineDragState.pending = false;
-    lineDragState.pendingLine = null;
-    lineDragState.pendingEnd = null;
-  });
-}
-
-if (canvas) extendSetupCanvasEvents(); else document.addEventListener('DOMContentLoaded', () => {
-  if (canvas) extendSetupCanvasEvents();
-});
-
 // ==================== ЭКСПОРТ ГЛОБАЛЬНЫХ ФУНКЦИЙ ====================
 window.canvas = canvas;
 window.analyzeIntersectionPoints = analyzeIntersectionPoints;
@@ -3920,7 +3617,6 @@ window.splitAllLines = splitAllLines;
 window.generateLineId = generateLineId;
 window.splitLineAtPoint = splitLineAtPoint;
 window.checkFlowBalance = checkFlowBalance;
-window.createTestScenarioComplex = createTestScenarioComplex;
 window.splitAllLinesBeforeCalculation = splitAllLinesBeforeCalculation;
 window.exportToPDFWithOptions = exportToPDFWithOptions;
 window.closePDFExportModal = closePDFExportModal;

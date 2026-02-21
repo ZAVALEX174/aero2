@@ -1,7 +1,7 @@
 // ПОЛНЫЙ КОД РЕДАКТОРА С ИСПРАВЛЕННЫМ АЛГОРИТМОМ РАСЧЁТА ВОЗДУХА
-// Версия 3.3 – удалены неработающие функции: сложный тест и перетаскивание линий/узлов.
+// Версия 3.4 – добавлена привязка к точкам (узлам) при рисовании линий.
 
-console.log("РЕДАКТОР ТЕХНИЧЕСКИХ ЧЕРТЕЖЕЙ (ФИНАЛЬНАЯ ВЕРСИЯ 3.3)");
+console.log("РЕДАКТОР ТЕХНИЧЕСКИХ ЧЕРТЕЖЕЙ (ФИНАЛЬНАЯ ВЕРСИЯ 3.4)");
 
 // ==================== КОНСТАНТЫ И ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ ====================
 const APP_CONFIG = {
@@ -466,6 +466,27 @@ function toggleGrid() {
 
 function snapToGrid(value, gridSize = APP_CONFIG.GRID_SIZE) {
   return roundTo5(Math.round(value / gridSize) * gridSize);
+}
+
+// ==================== ПРИВЯЗКА К УЗЛАМ ====================
+/**
+ * Находит ближайший узел (из connectionNodes) к заданной точке.
+ * @param {number} x
+ * @param {number} y
+ * @param {number} threshold - максимальное расстояние
+ * @returns {object|null} - {x, y} координаты узла или null
+ */
+function snapToNode(x, y, threshold = APP_CONFIG.SNAP_RADIUS) {
+  let closestNode = null;
+  let minDist = threshold;
+  for (const node of connectionNodes.values()) {
+    const dist = Math.hypot(x - node.x, y - node.y);
+    if (dist < minDist) {
+      minDist = dist;
+      closestNode = node;
+    }
+  }
+  return closestNode ? {x: closestNode.x, y: closestNode.y} : null;
 }
 
 // ==================== УПРАВЛЕНИЕ ОБЪЕКТАМИ ====================
@@ -1352,13 +1373,14 @@ function handleCanvasMouseDown(options) {
     if (activeObject) showContextMenu(pointer.x, pointer.y);
     options.e.preventDefault();
   }
-  // Удалён блок, отвечавший за перетаскивание линии (lineDragState)
 }
 
 function handleLineDrawingStart(options, pointer) {
   if (!lineStartPoint) {
     let snappedX, snappedY;
     let startPointFromObject = null;
+
+    // 1. Если зажат Alt, привязываемся к краю объекта
     if (altKeyPressed && options.target) {
       const objectEdgePoint = findClosestPointOnObjectEdge(options.target, pointer);
       if (objectEdgePoint) {
@@ -1372,29 +1394,43 @@ function handleLineDrawingStart(options, pointer) {
         snappedY = roundTo5(objectEdgePoint.y);
       }
     }
+
+    // 2. Если не привязались к объекту, пробуем привязаться к узлу
     if (!startPointFromObject) {
-      snappedX = roundTo5(snapToGrid(pointer.x));
-      snappedY = roundTo5(snapToGrid(pointer.y));
-    }
-    const nodeAtStartPoint = isPointInLockedNode(snappedX, snappedY);
-    if (nodeAtStartPoint) {
-      snappedX = nodeAtStartPoint.node.x;
-      snappedY = nodeAtStartPoint.node.y;
-      const objectsAtNode = [];
-      getCachedImages().forEach(img => {
-        const center = getObjectCenter(img);
-        if (Math.hypot(center.x - snappedX, center.y - snappedY) < 30) objectsAtNode.push(img);
-      });
-      if (objectsAtNode.length > 0 && !startPointFromObject) {
-        startPointFromObject = {
-          x: snappedX,
-          y: snappedY,
-          object: objectsAtNode[0],
-          edgePoint: true
-        };
+      const nodeSnap = snapToNode(pointer.x, pointer.y);
+      if (nodeSnap) {
+        snappedX = nodeSnap.x;
+        snappedY = nodeSnap.y;
+        // Проверим, есть ли объект в этом узле (для последующей привязки линии к объекту)
+        const objectsAtNode = [];
+        getCachedImages().forEach(img => {
+          const center = getObjectCenter(img);
+          if (Math.hypot(center.x - snappedX, center.y - snappedY) < 30) objectsAtNode.push(img);
+        });
+        if (objectsAtNode.length > 0) {
+          startPointFromObject = {
+            x: snappedX,
+            y: snappedY,
+            object: objectsAtNode[0],
+            edgePoint: true
+          };
+        }
+      } else {
+        // 3. Иначе привязываемся к сетке
+        snappedX = roundTo5(snapToGrid(pointer.x));
+        snappedY = roundTo5(snapToGrid(pointer.y));
       }
     }
-    if (!altKeyPressed && lineSplitMode !== 'MANUAL' && !nodeAtStartPoint) {
+
+    // Проверка на заблокированный узел (для информации, не препятствует)
+    const nodeAtStartPoint = isPointInLockedNode(snappedX, snappedY);
+    if (nodeAtStartPoint) {
+      // Узел заблокирован, но мы всё равно можем начать линию
+      console.log('Начало в заблокированном узле');
+    }
+
+    // Автоматическое разделение, если не зажат Alt и не попали в узел
+    if (!altKeyPressed && lineSplitMode !== 'MANUAL' && !nodeAtStartPoint && !startPointFromObject) {
       const lineAtPoint = findLineAtPoint(pointer);
       if (lineAtPoint && !lineAtPoint.isEnd) {
         const splitResult = splitLineAtPoint(lineAtPoint.line, lineAtPoint.point);
@@ -1427,29 +1463,16 @@ function handleLineDrawingStart(options, pointer) {
             updateAllAirVolumeTexts();
           }, 50);
           return;
-        } else {
-          lineStartPoint = {
-            x: snappedX,
-            y: snappedY, ...(startPointFromObject || {})
-          };
         }
-      } else if (lineAtPoint && lineAtPoint.isEnd) {
-        lineStartPoint = {
-          x: lineAtPoint.point.x,
-          y: lineAtPoint.point.y, ...(startPointFromObject || {})
-        };
-      } else {
-        lineStartPoint = {
-          x: snappedX,
-          y: snappedY, ...(startPointFromObject || {})
-        };
       }
-    } else {
-      lineStartPoint = {
-        x: snappedX,
-        y: snappedY, ...(startPointFromObject || {})
-      };
     }
+
+    // Если ничего не сработало, используем уже определённые snappedX, snappedY
+    lineStartPoint = {
+      x: snappedX,
+      y: snappedY, ...(startPointFromObject || {})
+    };
+
     previewLine = new fabric.Line([lineStartPoint.x, lineStartPoint.y, snappedX, snappedY], {
       stroke: APP_CONFIG.DEFAULT_LINE_COLOR,
       strokeWidth: 2,
@@ -1468,6 +1491,8 @@ function handleLineDrawingStart(options, pointer) {
 function handleLineDrawingEnd(options, pointer) {
   let snappedX, snappedY;
   let endPointFromObject = null;
+
+  // 1. Привязка к объекту с Alt
   if (altKeyPressed && options.target) {
     const objectEdgePoint = findClosestPointOnObjectEdge(options.target, pointer);
     if (objectEdgePoint) {
@@ -1481,17 +1506,24 @@ function handleLineDrawingEnd(options, pointer) {
       snappedY = roundTo5(objectEdgePoint.y);
     }
   }
+
+  // 2. Привязка к узлу
   if (!endPointFromObject) {
-    snappedX = roundTo5(snapToGrid(pointer.x));
-    snappedY = roundTo5(snapToGrid(pointer.y));
+    const nodeSnap = snapToNode(pointer.x, pointer.y);
+    if (nodeSnap) {
+      snappedX = nodeSnap.x;
+      snappedY = nodeSnap.y;
+      console.log('Конечная точка привязана к существующему узлу');
+    } else {
+      // 3. Сетка
+      snappedX = roundTo5(snapToGrid(pointer.x));
+      snappedY = roundTo5(snapToGrid(pointer.y));
+    }
   }
+
   const nodeAtEndPoint = isPointInLockedNode(snappedX, snappedY);
-  if (nodeAtEndPoint) {
-    snappedX = nodeAtEndPoint.node.x;
-    snappedY = nodeAtEndPoint.node.y;
-    console.log('Конечная точка привязана к существующему узлу');
-  }
-  if (!altKeyPressed && !nodeAtEndPoint) {
+  // Автоматическое разделение, если не Alt и не узел
+  if (!altKeyPressed && !nodeAtEndPoint && !endPointFromObject) {
     const lineAtEndPoint = findLineAtPoint({x: snappedX, y: snappedY});
     if (lineAtEndPoint && !lineAtEndPoint.isEnd) {
       const splitResult = splitLineAtPoint(lineAtEndPoint.line, lineAtEndPoint.point);
@@ -1508,6 +1540,7 @@ function handleLineDrawingEnd(options, pointer) {
       }
     }
   }
+
   const length = roundTo5(Math.hypot(snappedX - lineStartPoint.x, snappedY - lineStartPoint.y));
   const lineId = generateLineId();
   const passageLength = roundTo5(parseFloat(document.getElementById('propertyPassageLength')?.value) || 0.5);
@@ -1519,6 +1552,7 @@ function handleLineDrawingEnd(options, pointer) {
   if (lineStartPoint.object && lineStartPoint.object.properties && lineStartPoint.object.properties.airVolume !== undefined) {
     initialAirVolume = roundTo5(lineStartPoint.object.properties.airVolume);
   }
+
   const finalLine = new fabric.Line([lineStartPoint.x, lineStartPoint.y, snappedX, snappedY], {
     stroke: APP_CONFIG.DEFAULT_LINE_COLOR,
     strokeWidth: APP_CONFIG.DEFAULT_LINE_WIDTH,
@@ -1537,6 +1571,7 @@ function handleLineDrawingEnd(options, pointer) {
       endPoint: {x: snappedX, y: snappedY}
     }
   });
+
   if (lineStartPoint.object) {
     finalLine.lineStartsFromObject = true;
     finalLine.startObject = lineStartPoint.object;
@@ -1548,6 +1583,7 @@ function handleLineDrawingEnd(options, pointer) {
     };
     setTimeout(() => createIntersectionPointForLineStart(finalLine), 10);
   }
+
   if (previewLine) {
     canvas.remove(previewLine);
     previewLine = null;
@@ -1561,6 +1597,7 @@ function handleLineDrawingEnd(options, pointer) {
   scheduleRender();
   updatePropertiesPanel();
   updateStatus();
+
   if (!isContinuousLineMode) {
     deactivateAllModes();
   } else {
@@ -1569,6 +1606,7 @@ function handleLineDrawingEnd(options, pointer) {
       lineStartPoint.object = options.target;
       lineStartPoint.edgePoint = true;
     } else {
+      // Проверим, есть ли объект в новой начальной точке (для непрерывного режима)
       const nodeAtStart = isPointInLockedNode(snappedX, snappedY);
       if (nodeAtStart) {
         const objectsAtNode = [];
@@ -1603,14 +1641,24 @@ function handleLineDrawingEnd(options, pointer) {
 function handleCanvasMouseMove(options) {
   if (!isDrawingLine || !lineStartPoint) return;
   const pointer = canvas.getPointer(options.e);
-  const snappedX = roundTo5(snapToGrid(pointer.x)),
-    snappedY = roundTo5(snapToGrid(pointer.y));
+
+  // Определяем координаты с привязкой
+  let targetX, targetY;
+  const nodeSnap = snapToNode(pointer.x, pointer.y);
+  if (nodeSnap) {
+    targetX = nodeSnap.x;
+    targetY = nodeSnap.y;
+  } else {
+    targetX = roundTo5(snapToGrid(pointer.x));
+    targetY = roundTo5(snapToGrid(pointer.y));
+  }
+
   const previewLine = canvas.getObjects().find(obj => obj.id === 'preview-line');
   if (previewLine) {
-    previewLine.set({x2: snappedX, y2: snappedY});
+    previewLine.set({x2: targetX, y2: targetY});
     previewLine.setCoords();
   } else if (lineStartPoint) {
-    const newPreviewLine = new fabric.Line([lineStartPoint.x, lineStartPoint.y, snappedX, snappedY], {
+    const newPreviewLine = new fabric.Line([lineStartPoint.x, lineStartPoint.y, targetX, targetY], {
       stroke: APP_CONFIG.DEFAULT_LINE_COLOR,
       strokeWidth: 2,
       strokeDashArray: [5, 5],
@@ -3623,4 +3671,4 @@ window.closePDFExportModal = closePDFExportModal;
 window.exportToPDF = exportToPDF;
 window.quickExportToPDF = quickExportToPDF;
 
-console.log('Редактор технических чертежей загружен с исправленным алгоритмом учёта сопротивления на концах линий и перераспределением вверх по графу!');
+console.log('Редактор технических чертежей загружен с исправленным алгоритмом учёта сопротивления на концах линий и привязкой к точкам!');
